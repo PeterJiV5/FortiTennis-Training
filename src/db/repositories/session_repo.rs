@@ -15,9 +15,10 @@ impl SessionRepository {
              ORDER BY scheduled_date DESC, created_at DESC",
         )?;
 
-        let sessions = stmt
-            .query_map([], |row| Self::map_row(row))?
-            .collect::<Result<Vec<_>, _>>()?;
+        let sessions = stmt.query_map([], |row| Self::map_row(row))?;
+        let sessions: Vec<Session> = sessions
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| crate::utils::AppError::Database(e))?;
 
         Ok(sessions)
     }
@@ -32,9 +33,10 @@ impl SessionRepository {
              ORDER BY scheduled_date DESC, created_at DESC",
         )?;
 
-        let sessions = stmt
-            .query_map([coach_id], |row| Self::map_row(row))?
-            .collect::<Result<Vec<_>, _>>()?;
+        let sessions = stmt.query_map([coach_id], |row| Self::map_row(row))?;
+        let sessions: Vec<Session> = sessions
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| crate::utils::AppError::Database(e))?;
 
         Ok(sessions)
     }

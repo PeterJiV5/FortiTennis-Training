@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // Create and run app
-    let mut app = App::new(user_context);
+    let mut app = App::new(user_context, args.db_path);
     let res = app.run(&mut terminal);
 
     // Restore terminal
@@ -164,7 +164,7 @@ fn init_sample_data(conn: &rusqlite::Connection) -> Result<(), AppError> {
     conn.execute(
         "INSERT OR IGNORE INTO users (username, display_name, role, created_at, updated_at)
          VALUES (?, ?, ?, datetime('now'), datetime('now'))",
-        ["coach", "Coach John", "coach"],
+        ["coach", "Coach Peter", "coach"],
     )?;
 
     // Insert sample players

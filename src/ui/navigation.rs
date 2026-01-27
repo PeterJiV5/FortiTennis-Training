@@ -12,7 +12,7 @@ pub enum Screen {
 
 impl Screen {
     /// Get available menu items based on user role
-    pub fn get_menu_items(user_context: &UserContext) -> Vec<String> {
+    pub fn get_menu_items(user_context: &UserContext) -> Vec<(&'static str, Screen)> {
         if user_context.is_coach() {
             vec![
                 ("Home", Screen::Home),

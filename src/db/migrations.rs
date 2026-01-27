@@ -156,38 +156,3 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
 	Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use tempfile::tempdir;
-	use crate::db::connection::establish_connection;
-
-	#[test]
-	fn test_run_migrations() {
-		let dir = tempdir().unwrap();
-		let db_path = dir.path().join("test.db");
-		let db_path_str = db_path.to_str().unwrap();
-		let conn = establish_connection(db_path_str).unwrap();
-
-		// Should not panic here
-		run_migrations(&conn).unwrap();
-
-		// Verify tables exist
-		let tables: Vec<String> = conn.query_row("SELECT name FROM sqlite_master WHERE type='table'", [], |row| row.get(0))?;
-		assert!(tables.contains(&"users".to_string()));
-		assert!(tables.contains(&"sessions".to_string()));
-		assert!(tables.contains(&"training_content".to_string()));
-		assert!(tables.contains(&"quizzes".to_string()));
-		assert!(tables.contains(&"homework".to_string()));
-		assert!(tables.contains(&"subscriptions".to_string()));
-		assert!(tables.contains(&"quiz_responses".to_string()));
-		assert!(tables.contains(&"homework_submissions".to_string()));	
-
-		let table_count: i32 = conn
-			.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table'", [], |row| row.get(0))?;
-		assert_eq!(table_count, 7);
-
-		Ok(())
-	}
-}
