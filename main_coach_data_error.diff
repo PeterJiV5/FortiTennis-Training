@@ -1,0 +1,34 @@
+diff --git a/src/main.rs b/src/main.rs
+index previous..current
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -89,17 +89,23 @@ fn load_user(conn: &rusqlite::Connection, username: &str) -> Result<User, AppEr
+         let created_at_str: String = row.get(6)?;
+         let updated_at_str: String = row.get(7)?;
+ 
++        // Parse SQLite datetime format (YYYY-MM-DD HH:MM:SS)
++        let created_at = chrono::NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S")
++            .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
++            .unwrap_or_else(|_| chrono::Utc::now());
++        
++        let updated_at = chrono::NaiveDateTime::parse_from_str(&updated_at_str, "%Y-%m-%d %H:%M:%S")
++            .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
++            .unwrap_or_else(|_| chrono::Utc::now());
++
+         Ok(User {
+             id: row.get(0)?,
+             username: row.get(1)?,
+             display_name: row.get(2)?,
+             role,
+             skill_level,
+             goals: row.get(5)?,
+-            created_at: chrono::DateTime::parse_from_rfc3339(&created_at_str)
+-                .unwrap()
+-                .with_timezone(&chrono::Utc),
+-            updated_at: chrono::DateTime::parse_from_rfc3339(&updated_at_str)
+-                .unwrap()
+-                .with_timezone(&chrono::Utc),
++            created_at,
++            updated_at,
+         })
+     })?;

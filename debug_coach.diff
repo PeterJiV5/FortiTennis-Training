@@ -1,0 +1,65 @@
+diff --git a/src/main.rs b/src/main.rs
+index current..debug3
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -95,7 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+ 
+ fn load_user(conn: &rusqlite::Connection, username: &str) -> Result<User, AppError> {
+     eprintln!("DEBUG: Attempting to load user: {}", username);
+-
++    
+     let mut stmt = conn.prepare(
+         "SELECT id, username, display_name, role, skill_level, goals, created_at, updated_at
+          FROM users WHERE username = ?",
+@@ -104,12 +104,22 @@ fn load_user(conn: &rusqlite::Connection, username: &str) -> Result<User, AppEr
+     let user = stmt.query_row([username], |row| {
+         let role_str: String = row.get(3)?;
+         eprintln!("DEBUG: role_str = {}", role_str);
+-
++        
+         let skill_level_str: Option<String> = row.get(4)?;
+-
+-        let role = UserRole::from_str(&role_str)
+-            .inspect(|r| eprintln!("DEBUG: Parsed role successfully: {:?}", r))
+-            .inspect(|_| eprintln!("DEBUG: Failed to parse role from: {}", role_str))
+-            .ok_or_else(|| rusqlite::Error::InvalidQuery)?;
++        eprintln!("DEBUG: skill_level_str = {:?}", skill_level_str);
++
++        let role = match UserRole::from_str(&role_str) {
++            Some(r) => {
++                eprintln!("DEBUG: Parsed role successfully: {:?}", r);
++                r
++            },
++            None => {
++                eprintln!("DEBUG: Failed to parse role from: '{}'", role_str);
++                return Err(rusqlite::Error::InvalidQuery);
++            }
++        };
+ 
+         let skill_level = skill_level_str.and_then(|s| models::SkillLevel::from_str(&s));
++        eprintln!("DEBUG: skill_level parsed: {:?}", skill_level);
+ 
+         let created_at_str: String = row.get(6)?;
++        eprintln!("DEBUG: created_at_str = {}", created_at_str);
+         let updated_at_str: String = row.get(7)?;
++        eprintln!("DEBUG: updated_at_str = {}", updated_at_str);
+ 
+         // Parse SQLite datetime format (YYYY-MM-DD HH:MM:SS)
+@@ -124,6 +134,7 @@ fn load_user(conn: &rusqlite::Connection, username: &str) -> Result<User, AppEr
+                     chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                 })
+                 .unwrap_or_else(|_| chrono::Utc::now());
++        eprintln!("DEBUG: created_at parsed successfully");
+ 
+         let updated_at =
+             chrono::NaiveDateTime::parse_from_str(&updated_at_str, "%Y-%m-%d %H:%M:%S")
+@@ -131,6 +142,9 @@ fn load_user(conn: &rusqlite::Connection, username: &str) -> Result<User, AppEr
+                     chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                 })
+                 .unwrap_or_else(|_| chrono::Utc::now());
++        eprintln!("DEBUG: updated_at parsed successfully");
++        
++        eprintln!("DEBUG: About to create User struct");
+ 
+         Ok(User {
+             id: row.get(0)?,
