@@ -15,6 +15,10 @@ path = "src/main.rs"
 name = "unit_tests"
 path = "tests/unit/mod.rs"
 
+[[test]]
+name = "integration_tests"
+path = "tests/integration/mod.rs"
+
 [workspace]
 members = ["."]
 

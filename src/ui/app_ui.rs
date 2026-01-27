@@ -1,26 +1,29 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    Frame, Terminal,
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
+    Frame, Terminal,
 };
 use std::io;
 
 use crate::auth::UserContext;
-use crate::db::repositories::SessionRepository;
-use crate::models::Session;
+use crate::db::repositories::{SessionRepository, SubscriptionRepository};
+use crate::models::SessionWithSubscription;
 use crate::ui::navigation::Screen;
+use crate::ui::session_filter::SessionFilter;
 
 pub struct App {
     pub user_context: UserContext,
     pub should_quit: bool,
     pub current_screen: Screen,
-    pub sessions: Vec<Session>,
+    pub sessions: Vec<SessionWithSubscription>,
     pub selected_index: usize,
     pub db_path: String,
+    pub session_filter: SessionFilter,
+    pub message: Option<String>,
 }
 
 impl App {
@@ -32,6 +35,8 @@ impl App {
             sessions: Vec::new(),
             selected_index: 0,
             db_path,
+            session_filter: SessionFilter::MySubscriptions,
+            message: None,
         }
     }
 
@@ -54,6 +59,9 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) {
+        // Clear message on any key press
+        self.message = None;
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
                 // If on home screen, quit; otherwise go back to home
@@ -78,6 +86,27 @@ impl App {
                     self.current_screen = Screen::SessionCreate;
                 }
             }
+            KeyCode::Char('f') | KeyCode::Char('F') => {
+                // Toggle filter (player only, on session list)
+                if self.user_context.is_player() && self.current_screen == Screen::SessionList {
+                    self.session_filter = self.session_filter.toggle();
+                    self.load_sessions();
+                }
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                // Subscribe/Unsubscribe (player only, on session list)
+                if self.user_context.is_player() && self.current_screen == Screen::SessionList {
+                    self.toggle_subscription();
+                }
+            }
+            KeyCode::Char('m') | KeyCode::Char('M') => {
+                // Mark complete (player only, on session detail)
+                if self.user_context.is_player() {
+                    if let Screen::SessionDetail(session_id) = self.current_screen {
+                        self.mark_session_complete(session_id);
+                    }
+                }
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
@@ -90,7 +119,7 @@ impl App {
             }
             KeyCode::Enter => {
                 if self.current_screen == Screen::SessionList && !self.sessions.is_empty() {
-                    let session_id = self.sessions[self.selected_index].id;
+                    let session_id = self.sessions[self.selected_index].session.id;
                     self.current_screen = Screen::SessionDetail(session_id);
                 }
             }
@@ -100,14 +129,100 @@ impl App {
 
     fn load_sessions(&mut self) {
         if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
-            self.sessions = if self.user_context.is_coach() {
-                SessionRepository::find_by_coach(&conn, self.user_context.user.id)
-                    .unwrap_or_default()
+            if self.user_context.is_coach() {
+                // Coach sees all their created sessions
+                let sessions = SessionRepository::find_by_coach(&conn, self.user_context.user.id)
+                    .unwrap_or_default();
+                
+                self.sessions = sessions
+                    .into_iter()
+                    .map(|s| SessionWithSubscription::new(s, None))
+                    .collect();
             } else {
-                // For players, we'll later filter to subscribed sessions
-                SessionRepository::find_all(&conn).unwrap_or_default()
-            };
+                // Player sees sessions based on filter
+                let all_sessions = SessionRepository::find_all(&conn).unwrap_or_default();
+                let user_subscriptions = SubscriptionRepository::find_by_user(&conn, self.user_context.user.id)
+                    .unwrap_or_default();
+
+                self.sessions = all_sessions
+                    .into_iter()
+                    .map(|session| {
+                        let subscription = user_subscriptions
+                            .iter()
+                            .find(|sub| sub.session_id == session.id)
+                            .cloned();
+                        SessionWithSubscription::new(session, subscription)
+                    })
+                    .filter(|sws| {
+                        match self.session_filter {
+                            SessionFilter::MySubscriptions => sws.is_subscribed(),
+                            SessionFilter::AllAvailable => true,
+                        }
+                    })
+                    .collect();
+            }
             self.selected_index = 0;
+        }
+    }
+
+    fn toggle_subscription(&mut self) {
+        if self.sessions.is_empty() {
+            return;
+        }
+
+        let session_with_sub = &self.sessions[self.selected_index];
+        let session_id = session_with_sub.session.id;
+
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            if session_with_sub.is_subscribed() {
+                // Unsubscribe
+                if let Err(e) = SubscriptionRepository::delete_by_user_and_session(
+                    &conn,
+                    self.user_context.user.id,
+                    session_id,
+                ) {
+                    self.message = Some(format!("Error unsubscribing: {}", e));
+                } else {
+                    self.message = Some("Unsubscribed successfully".to_string());
+                    self.load_sessions();
+                }
+            } else {
+                // Subscribe
+                if let Err(e) = SubscriptionRepository::create(
+                    &conn,
+                    self.user_context.user.id,
+                    session_id,
+                ) {
+                    self.message = Some(format!("Error subscribing: {}", e));
+                } else {
+                    self.message = Some("Subscribed successfully".to_string());
+                    self.load_sessions();
+                }
+            }
+        }
+    }
+
+    fn mark_session_complete(&mut self, session_id: i64) {
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            // Find the subscription
+            if let Ok(Some(subscription)) = SubscriptionRepository::find_by_user_and_session(
+                &conn,
+                self.user_context.user.id,
+                session_id,
+            ) {
+                if subscription.completed_at.is_some() {
+                    self.message = Some("Session already marked as complete".to_string());
+                } else {
+                    if let Err(e) = SubscriptionRepository::mark_completed(&conn, subscription.id) {
+                        self.message = Some(format!("Error marking complete: {}", e));
+                    } else {
+                        self.message = Some("Session marked as complete!".to_string());
+                        self.load_sessions();
+                    }
+                }
+            } else {
+                self.message = Some("You must subscribe to this session first".to_string());
+            }
         }
     }
 
@@ -115,26 +230,41 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Header
-                Constraint::Min(0),    // Main content
-                Constraint::Length(3), // Footer
+                Constraint::Length(3),    // Header
+                Constraint::Length(1),    // Message bar
+                Constraint::Min(0),       // Main content
+                Constraint::Length(3),    // Footer
             ])
             .split(frame.size());
 
         // Header
         self.render_header(frame, chunks[0]);
 
+        // Message bar
+        if let Some(ref message) = self.message {
+            let msg_color = if message.contains("Error") || message.contains("already") {
+                Color::Red
+            } else {
+                Color::Green
+            };
+            
+            let msg_widget = Paragraph::new(message.as_str())
+                .style(Style::default().fg(msg_color).add_modifier(Modifier::BOLD))
+                .alignment(Alignment::Center);
+            frame.render_widget(msg_widget, chunks[1]);
+        }
+
         // Main content - render based on current screen
         match &self.current_screen {
-            Screen::Home => self.render_home(frame, chunks[1]),
-            Screen::SessionList => self.render_session_list(frame, chunks[1]),
-            Screen::SessionDetail(id) => self.render_session_detail(frame, chunks[1], *id),
-            Screen::SessionCreate => self.render_session_create(frame, chunks[1]),
-            _ => self.render_home(frame, chunks[1]),
+            Screen::Home => self.render_home(frame, chunks[2]),
+            Screen::SessionList => self.render_session_list(frame, chunks[2]),
+            Screen::SessionDetail(id) => self.render_session_detail(frame, chunks[2], *id),
+            Screen::SessionCreate => self.render_session_create(frame, chunks[2]),
+            _ => self.render_home(frame, chunks[2]),
         }
 
         // Footer
-        self.render_footer(frame, chunks[2]);
+        self.render_footer(frame, chunks[3]);
     }
 
     fn render_header(&self, frame: &mut Frame, area: Rect) {
@@ -164,15 +294,23 @@ impl App {
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let footer_text = match &self.current_screen {
-            Screen::Home => "Press [1] Home | [2] Sessions | [q] Quit",
+            Screen::Home => {
+                "Press [1] Home | [2] Sessions | [q] Quit"
+            }
             Screen::SessionList => {
                 if self.user_context.is_coach() {
                     "↑↓ Navigate | [Enter] View | [c] Create | [Esc] Back | [q] Quit"
                 } else {
-                    "↑↓ Navigate | [Enter] View | [Esc] Back | [q] Quit"
+                    "↑↓ Navigate | [Enter] View | [s] Subscribe/Unsub | [f] Filter | [Esc] Back | [q] Quit"
                 }
             }
-            Screen::SessionDetail(_) => "[Esc] Back | [q] Quit",
+            Screen::SessionDetail(_) => {
+                if self.user_context.is_player() {
+                    "[m] Mark Complete | [Esc] Back | [q] Quit"
+                } else {
+                    "[Esc] Back | [q] Quit"
+                }
+            }
             Screen::SessionCreate => "[Esc] Cancel | [q] Quit",
             _ => "[Esc] Back | [q] Quit",
         };
@@ -245,9 +383,9 @@ impl App {
 
     fn render_session_list(&self, frame: &mut Frame, area: Rect) {
         let title = if self.user_context.is_coach() {
-            "Manage Sessions"
+            "Manage Sessions".to_string()
         } else {
-            "My Sessions"
+            format!("{}", self.session_filter.as_str())
         };
 
         if self.sessions.is_empty() {
@@ -261,8 +399,10 @@ impl App {
                 Line::from(""),
                 Line::from(if self.user_context.is_coach() {
                     "Press [c] to create your first session"
+                } else if self.session_filter == SessionFilter::MySubscriptions {
+                    "You haven't subscribed to any sessions yet. Press [f] to view all available sessions."
                 } else {
-                    "No sessions assigned yet"
+                    "No sessions available"
                 }),
             ];
 
@@ -278,7 +418,9 @@ impl App {
             .sessions
             .iter()
             .enumerate()
-            .map(|(i, session)| {
+            .map(|(i, session_with_sub)| {
+                let session = &session_with_sub.session;
+                
                 let date_str = session
                     .scheduled_date
                     .map(|d| d.format("%Y-%m-%d").to_string())
@@ -294,6 +436,19 @@ impl App {
                     .map(|d| format!(" ({}min)", d))
                     .unwrap_or_default();
 
+                // Add subscription indicators for players
+                let status_indicator = if self.user_context.is_player() {
+                    if session_with_sub.is_completed() {
+                        " ✓"
+                    } else if session_with_sub.is_subscribed() {
+                        " ●"
+                    } else {
+                        ""
+                    }
+                } else {
+                    ""
+                };
+
                 let line = if i == self.selected_index {
                     Line::from(vec![
                         Span::styled(
@@ -308,12 +463,12 @@ impl App {
                                 .fg(Color::White)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::raw(format!(" - {} {}{}", date_str, time_str, duration_str)),
+                        Span::raw(format!(" - {} {}{}{}", date_str, time_str, duration_str, status_indicator)),
                     ])
                 } else {
                     Line::from(format!(
-                        "  {} - {} {}{}",
-                        session.title, date_str, time_str, duration_str
+                        "  {} - {} {}{}{}",
+                        session.title, date_str, time_str, duration_str, status_indicator
                     ))
                 };
 
@@ -328,10 +483,12 @@ impl App {
 
     fn render_session_detail(&self, frame: &mut Frame, area: Rect, session_id: i64) {
         // Find the session
-        let session = self.sessions.iter().find(|s| s.id == session_id);
+        let session_with_sub = self.sessions.iter().find(|s| s.session.id == session_id);
 
-        let content = if let Some(session) = session {
-            vec![
+        let content = if let Some(sws) = session_with_sub {
+            let session = &sws.session;
+            
+            let mut lines = vec![
                 Line::from(""),
                 Line::from(Span::styled(
                     &session.title,
@@ -340,6 +497,30 @@ impl App {
                         .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
+            ];
+
+            // Show subscription status for players
+            if self.user_context.is_player() {
+                if sws.is_completed() {
+                    lines.push(Line::from(Span::styled(
+                        "Status: ✓ Completed",
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    )));
+                } else if sws.is_subscribed() {
+                    lines.push(Line::from(Span::styled(
+                        "Status: ● Subscribed",
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    )));
+                } else {
+                    lines.push(Line::from(Span::styled(
+                        "Status: Not subscribed",
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
+                lines.push(Line::from(""));
+            }
+
+            lines.extend(vec![
                 Line::from(format!(
                     "Date: {}",
                     session
@@ -373,14 +554,30 @@ impl App {
                         .description
                         .as_ref()
                         .map(|s| s.as_str())
-                        .unwrap_or("No description"),
+                        .unwrap_or("No description")
                 ),
                 Line::from(""),
-                Line::from(Span::styled(
+            ]);
+
+            if self.user_context.is_player() {
+                lines.push(Line::from(Span::styled(
+                    if sws.is_completed() {
+                        "This session is already marked as complete"
+                    } else if sws.is_subscribed() {
+                        "Press [m] to mark this session as complete"
+                    } else {
+                        "Subscribe to this session from the session list to track your progress"
+                    },
+                    Style::default().fg(Color::DarkGray),
+                )));
+            } else {
+                lines.push(Line::from(Span::styled(
                     "Training content will be displayed here in future updates",
                     Style::default().fg(Color::DarkGray),
-                )),
-            ]
+                )));
+            }
+
+            lines
         } else {
             vec![
                 Line::from(""),
@@ -417,12 +614,8 @@ impl App {
             Line::from("For now, you can add sessions directly to the database:"),
             Line::from(""),
             Line::from("  sqlite3 data/tennis.db"),
-            Line::from(
-                "  INSERT INTO sessions (title, description, created_by, created_at, updated_at)",
-            ),
-            Line::from(
-                "  VALUES ('Test Session', 'A test session', 1, datetime('now'), datetime('now'));",
-            ),
+            Line::from("  INSERT INTO sessions (title, description, created_by, created_at, updated_at)"),
+            Line::from("  VALUES ('Test Session', 'A test session', 1, datetime('now'), datetime('now'));"),
         ];
 
         let paragraph = Paragraph::new(content)
