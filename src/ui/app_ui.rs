@@ -15,6 +15,7 @@ use crate::models::SessionWithSubscription;
 use crate::ui::navigation::Screen;
 use crate::ui::session_filter::SessionFilter;
 use crate::ui::session_form::SessionForm;
+use crate::ui::session_edit_form::SessionEditForm;
 
 pub struct App {
     pub user_context: UserContext,
@@ -26,6 +27,8 @@ pub struct App {
     pub session_filter: SessionFilter,
     pub message: Option<String>,
     pub session_form: SessionForm,
+    pub session_edit_form: Option<SessionEditForm>,
+    pub delete_confirmation: bool,
 }
 
 impl App {
@@ -40,6 +43,8 @@ impl App {
             session_filter: SessionFilter::MySubscriptions,
             message: None,
             session_form: SessionForm::new(),
+            session_edit_form: None,
+            delete_confirmation: false,
         }
     }
 
@@ -63,8 +68,25 @@ impl App {
 
     fn handle_key_event(&mut self, key: KeyEvent) {
         // Handle form input separately
-        if self.current_screen == Screen::SessionCreate {
+        if self.current_screen == Screen::SessionCreate || matches!(self.current_screen, Screen::SessionEdit(_)) {
             self.handle_form_key_event(key);
+            return;
+        }
+
+        // Handle delete confirmation
+        if matches!(self.current_screen, Screen::SessionDelete(_)) {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    if let Screen::SessionDelete(session_id) = self.current_screen {
+                        self.delete_session(session_id);
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    self.current_screen = Screen::SessionList;
+                    self.load_sessions();
+                }
+                _ => {}
+            }
             return;
         }
 
@@ -138,50 +160,137 @@ impl App {
                     self.current_screen = Screen::SessionDetail(session_id);
                 }
             }
+            KeyCode::Char('e') | KeyCode::Char('E') => {
+                // Edit session (coach only, on session list)
+                if self.user_context.is_coach() && self.current_screen == Screen::SessionList && !self.sessions.is_empty() {
+                    let session_id = self.sessions[self.selected_index].session.id;
+                    if let Some(session_with_sub) = self.sessions.iter().find(|s| s.session.id == session_id) {
+                        self.session_edit_form = Some(SessionEditForm::from_session(&session_with_sub.session));
+                        self.current_screen = Screen::SessionEdit(session_id);
+                    }
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                // Delete session (coach only, on session list)
+                if self.user_context.is_coach() && self.current_screen == Screen::SessionList && !self.sessions.is_empty() {
+                    let session_id = self.sessions[self.selected_index].session.id;
+                    self.current_screen = Screen::SessionDelete(session_id);
+                }
+            }
             _ => {}
         }
     }
 
     fn handle_form_key_event(&mut self, key: KeyEvent) {
+        let is_create = matches!(self.current_screen, Screen::SessionCreate);
+        let is_edit = matches!(self.current_screen, Screen::SessionEdit(_));
+
         match key.code {
             KeyCode::Tab => {
-                self.session_form.next_field();
+                if is_create {
+                    self.session_form.next_field();
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        form.next_field();
+                    }
+                }
             }
             KeyCode::BackTab => {
-                self.session_form.prev_field();
+                if is_create {
+                    self.session_form.prev_field();
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        form.prev_field();
+                    }
+                }
             }
             KeyCode::Char(c) => {
-                self.session_form.add_char(c);
+                if is_create {
+                    self.session_form.add_char(c);
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        form.add_char(c);
+                    }
+                }
             }
             KeyCode::Backspace => {
-                self.session_form.backspace();
+                if is_create {
+                    self.session_form.backspace();
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        form.backspace();
+                    }
+                }
             }
             KeyCode::Left => {
                 // For skill level navigation
-                if self.session_form.focus_field == crate::ui::session_form::FormField::SkillLevel {
-                    self.session_form.focus_field = crate::ui::session_form::FormField::DurationMinutes;
+                if is_create {
+                    if self.session_form.focus_field == crate::ui::session_form::FormField::SkillLevel {
+                        self.session_form.focus_field = crate::ui::session_form::FormField::DurationMinutes;
+                    }
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        if form.focus_field == crate::ui::session_edit_form::FormField::SkillLevel {
+                            form.focus_field = crate::ui::session_edit_form::FormField::DurationMinutes;
+                        }
+                    }
                 }
             }
             KeyCode::Right => {
                 // For skill level navigation
-                if self.session_form.focus_field == crate::ui::session_form::FormField::SkillLevel {
-                    self.session_form.cycle_skill_level_forward();
+                if is_create {
+                    if self.session_form.focus_field == crate::ui::session_form::FormField::SkillLevel {
+                        self.session_form.cycle_skill_level_forward();
+                    }
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        if form.focus_field == crate::ui::session_edit_form::FormField::SkillLevel {
+                            form.cycle_skill_level_forward();
+                        }
+                    }
                 }
             }
             KeyCode::Up => {
-                self.session_form.prev_field();
+                if is_create {
+                    self.session_form.prev_field();
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        form.prev_field();
+                    }
+                }
             }
             KeyCode::Down => {
-                self.session_form.next_field();
+                if is_create {
+                    self.session_form.next_field();
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        form.next_field();
+                    }
+                }
             }
             KeyCode::Enter => {
                 // Validate and save
-                match self.session_form.validate() {
-                    Ok(()) => {
-                        self.save_session();
+                if is_create {
+                    match self.session_form.validate() {
+                        Ok(()) => {
+                            self.save_session();
+                        }
+                        Err(e) => {
+                            self.message = Some(format!("Error: {}", e));
+                        }
                     }
-                    Err(e) => {
-                        self.message = Some(format!("Error: {}", e));
+                } else if is_edit {
+                    if let Some(form) = &mut self.session_edit_form {
+                        match form.validate() {
+                            Ok(()) => {
+                                if let Screen::SessionEdit(session_id) = self.current_screen {
+                                    self.update_session(session_id);
+                                }
+                            }
+                            Err(e) => {
+                                self.message = Some(format!("Error: {}", e));
+                            }
+                        }
                     }
                 }
             }
@@ -225,6 +334,65 @@ impl App {
                 }
                 Err(e) => {
                     self.message = Some(format!("Error saving session: {:?}", e));
+                }
+            }
+        } else {
+            self.message = Some("Error connecting to database".to_string());
+        }
+    }
+
+    fn update_session(&mut self, session_id: i64) {
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            if let Some(form) = &self.session_edit_form {
+                let (title, description, date, time, duration, skill_level_str) = form.as_db_values();
+                
+                // Parse skill level
+                let skill_level = crate::models::SkillLevel::from_str(&skill_level_str);
+                
+                // Parse dates/times
+                let date_parsed = date.as_ref().and_then(|d| {
+                    chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
+                });
+                let time_parsed = time.as_ref().and_then(|t| {
+                    chrono::NaiveTime::parse_from_str(t, "%H:%M").ok()
+                });
+                
+                match SessionRepository::update(
+                    &conn,
+                    session_id,
+                    &title,
+                    if description.is_empty() { None } else { Some(description.as_str()) },
+                    date_parsed,
+                    time_parsed,
+                    duration,
+                    skill_level.as_ref(),
+                ) {
+                    Ok(_) => {
+                        self.message = Some("Session updated successfully!".to_string());
+                        self.current_screen = Screen::SessionList;
+                        self.session_edit_form = None;
+                        self.load_sessions();
+                    }
+                    Err(e) => {
+                        self.message = Some(format!("Error updating session: {:?}", e));
+                    }
+                }
+            }
+        } else {
+            self.message = Some("Error connecting to database".to_string());
+        }
+    }
+
+    fn delete_session(&mut self, session_id: i64) {
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            match SessionRepository::delete(&conn, session_id) {
+                Ok(_) => {
+                    self.message = Some("Session deleted successfully!".to_string());
+                    self.current_screen = Screen::SessionList;
+                    self.load_sessions();
+                }
+                Err(e) => {
+                    self.message = Some(format!("Error deleting session: {:?}", e));
                 }
             }
         } else {
@@ -365,7 +533,8 @@ impl App {
             Screen::SessionList => self.render_session_list(frame, chunks[2]),
             Screen::SessionDetail(id) => self.render_session_detail(frame, chunks[2], *id),
             Screen::SessionCreate => self.render_session_create(frame, chunks[2]),
-            _ => self.render_home(frame, chunks[2]),
+            Screen::SessionEdit(_) => self.render_session_edit(frame),
+            Screen::SessionDelete(_) => self.render_session_delete(frame),
         }
 
         // Footer
@@ -826,5 +995,177 @@ impl App {
             .alignment(Alignment::Left);
 
         frame.render_widget(help_para, chunks[1]);
+    }
+
+    fn render_session_edit(&self, frame: &mut Frame) {
+        let size = frame.size();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
+            .split(size);
+
+        // Header
+        self.render_header(frame, chunks[0]);
+
+        // Form content
+        if let Some(form) = &self.session_edit_form {
+            let form_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                ])
+                .margin(2)
+                .split(chunks[1]);
+
+            // Title field
+            let title_block = Block::default()
+                .title("Title")
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .style(if form.focus_field == crate::ui::session_edit_form::FormField::Title {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                });
+            let title_para = Paragraph::new(form.title.as_str()).block(title_block);
+            frame.render_widget(title_para, form_chunks[0]);
+
+            // Description field
+            let desc_block = Block::default()
+                .title("Description (Optional)")
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .style(if form.focus_field == crate::ui::session_edit_form::FormField::Description {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                });
+            let desc_para = Paragraph::new(form.description.as_str()).block(desc_block);
+            frame.render_widget(desc_para, form_chunks[1]);
+
+            // Date field
+            let date_block = Block::default()
+                .title("Date (YYYY-MM-DD)")
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .style(if form.focus_field == crate::ui::session_edit_form::FormField::ScheduledDate {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                });
+            let date_para = Paragraph::new(form.scheduled_date.as_str()).block(date_block);
+            frame.render_widget(date_para, form_chunks[2]);
+
+            // Time field
+            let time_block = Block::default()
+                .title("Time (HH:MM)")
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .style(if form.focus_field == crate::ui::session_edit_form::FormField::ScheduledTime {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                });
+            let time_para = Paragraph::new(form.scheduled_time.as_str()).block(time_block);
+            frame.render_widget(time_para, form_chunks[3]);
+
+            // Duration field
+            let duration_block = Block::default()
+                .title("Duration (minutes, 5-480)")
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .style(if form.focus_field == crate::ui::session_edit_form::FormField::DurationMinutes {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                });
+            let duration_para = Paragraph::new(form.duration_minutes.as_str()).block(duration_block);
+            frame.render_widget(duration_para, form_chunks[4]);
+
+            // Skill level field
+            let skill_block = Block::default()
+                .title("Skill Level (↑/↓ to cycle)")
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .style(if form.focus_field == crate::ui::session_edit_form::FormField::SkillLevel {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                });
+            let skill_para = Paragraph::new(form.skill_level.as_str()).block(skill_block);
+            frame.render_widget(skill_para, form_chunks[5]);
+        }
+
+        // Footer with help
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("[Tab] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Next field  "),
+                Span::styled("[Shift+Tab] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Previous field  "),
+                Span::styled("[Enter] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Save  "),
+                Span::styled("[Esc] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Cancel"),
+            ]),
+        ];
+
+        let help_para = Paragraph::new(help_text)
+            .block(Block::default().borders(Borders::BOTTOM))
+            .alignment(Alignment::Left);
+
+        frame.render_widget(help_para, chunks[2]);
+    }
+
+    fn render_session_delete(&self, frame: &mut Frame) {
+        let size = frame.size();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
+            .split(size);
+
+        // Header
+        self.render_header(frame, chunks[0]);
+
+        // Delete confirmation dialog
+        let dialog_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(40), Constraint::Percentage(30)])
+            .split(chunks[1]);
+
+        let confirm_text = vec![
+            Line::from(""),
+            Line::from(Span::styled("Delete this session?", Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(Span::raw("All associated subscriptions will also be deleted.")),
+            Line::from(""),
+        ];
+
+        let confirm_para = Paragraph::new(confirm_text)
+            .block(Block::default().borders(Borders::ALL).title("Confirmation"))
+            .alignment(Alignment::Center);
+
+        frame.render_widget(confirm_para, dialog_chunks[1]);
+
+        // Footer
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("[y] ", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)),
+                Span::raw("Confirm  "),
+                Span::styled("[n] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Cancel"),
+            ]),
+        ];
+
+        let help_para = Paragraph::new(help_text)
+            .block(Block::default().borders(Borders::BOTTOM))
+            .alignment(Alignment::Left);
+
+        frame.render_widget(help_para, chunks[2]);
     }
 }

@@ -1,8 +1,8 @@
 # Tennis Training TUI App - Project Status
 
-**Last Updated:** January 27, 2026  
-**Current Version:** 0.4.0 (Phase 4A Complete)  
-**Project Status:** ✅ On Track - Session Creation Live!
+**Last Updated:** January 28, 2026  
+**Current Version:** 0.5.0 (Phase 4B Complete)  
+**Project Status:** ✅ On Track - Session Management Complete!
 
 ---
 
@@ -60,11 +60,21 @@ A multi-user terminal-based (TUI) application for tennis training management bui
 - [x] 13 comprehensive unit tests
 - [x] Form state management and UI rendering
 
+### ✅ Phase 4B: Session Editing & Deletion (Complete)
+- [x] Edit form with pre-populated session data
+- [x] Session update in database with timestamp
+- [x] Delete confirmation dialog
+- [x] Subscription cascade handling
+- [x] Key handlers: [e] to edit, [d] to delete
+- [x] Confirmation: [y] to confirm, [n] to cancel
+- [x] 10 comprehensive edit form unit tests
+- [x] All 83 tests passing (74 unit + 9 integration)
+
 ---
 
 ## Current Capabilities
 
-### ✅ Coach Workflow (Phase 4A Complete!)
+### ✅ Coach Workflow (Phase 4B Complete!)
 1. ✅ Log in via SSH as coach
 2. ✅ View home screen with personalized greeting
 3. ✅ Navigate to "Manage Sessions"
@@ -75,9 +85,15 @@ A multi-user terminal-based (TUI) application for tennis training management bui
    - Interactive form with field navigation
    - Validate all inputs (title length, date format, time format, duration range)
    - Save to database and return to session list
-8. ❌ Edit sessions (planned for Phase 4B)
-9. ❌ Delete sessions (planned for Phase 4B)
-10. ❌ View which players are subscribed to sessions (planned for Phase 4B)
+8. ✅ **Edit sessions with pre-populated form** (Phase 4B!)
+   - Edit form loads existing session data
+   - Same validation and navigation as creation
+   - Update database with timestamp
+9. ✅ **Delete sessions with confirmation** (Phase 4B!)
+   - Confirmation dialog before deletion
+   - Shows impact on subscriptions
+   - Cascade delete handled safely
+10. ❌ View which players are subscribed to sessions (planned for Phase 4C)
 
 ### ✅ Player Workflow (MVP Complete!)
 1. ✅ Log in via SSH as player

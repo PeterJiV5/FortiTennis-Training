@@ -140,7 +140,7 @@ impl SessionRepository {
             updated_at,
         })
     }
-}
+
     /// Update an existing session
     pub fn update(
         conn: &Connection,
@@ -170,3 +170,4 @@ impl SessionRepository {
         )?;
         Ok(())
     }
+}
