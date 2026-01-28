@@ -8,6 +8,7 @@ pub enum Screen {
     SessionCreate,
     SessionEdit(i64),   // session_id
     SessionDelete(i64), // session_id
+    Help,               // Help/commands screen
 }
 
 impl Screen {

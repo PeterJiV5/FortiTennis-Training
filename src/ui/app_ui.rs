@@ -94,9 +94,15 @@ impl App {
         self.message = None;
 
         match key.code {
+            KeyCode::Char('?') => {
+                // Show help screen
+                self.current_screen = Screen::Help;
+            }
             KeyCode::Char('q') | KeyCode::Char('Q') => {
-                // Quit only from home screen
-                if self.current_screen == Screen::Home {
+                // Quit only from home screen, or close help
+                if self.current_screen == Screen::Help {
+                    self.current_screen = Screen::Home;
+                } else if self.current_screen == Screen::Home {
                     self.should_quit = true;
                 } else {
                     self.current_screen = Screen::Home;
@@ -105,8 +111,12 @@ impl App {
             }
             KeyCode::Esc => {
                 // Go back/cancel
-                self.current_screen = Screen::Home;
-                self.selected_index = 0;
+                if self.current_screen == Screen::Help {
+                    self.current_screen = Screen::Home;
+                } else {
+                    self.current_screen = Screen::Home;
+                    self.selected_index = 0;
+                }
             }
             KeyCode::Char('1') => {
                 self.current_screen = Screen::Home;
@@ -535,9 +545,10 @@ impl App {
             Screen::SessionCreate => self.render_session_create(frame, chunks[2]),
             Screen::SessionEdit(_) => self.render_session_edit(frame),
             Screen::SessionDelete(_) => self.render_session_delete(frame),
+            Screen::Help => self.render_help(frame, chunks[2]),
         }
 
-        // Footer
+        // Footer with dynamic help text
         self.render_footer(frame, chunks[3]);
     }
 
@@ -567,31 +578,19 @@ impl App {
     }
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let footer_text = match &self.current_screen {
-            Screen::Home => {
-                "Press [1] Home | [2] Sessions | [q] Quit"
-            }
-            Screen::SessionList => {
-                if self.user_context.is_coach() {
-                    "↑↓ Navigate | [Enter] View | [c] Create | [Esc] Back | [q] Quit"
-                } else {
-                    "↑↓ Navigate | [Enter] View | [s] Subscribe/Unsub | [f] Filter | [Esc] Back | [q] Quit"
-                }
-            }
-            Screen::SessionDetail(_) => {
-                if self.user_context.is_player() {
-                    "[m] Mark Complete | [Esc] Back | [q] Quit"
-                } else {
-                    "[Esc] Back | [q] Quit"
-                }
-            }
-            Screen::SessionCreate => "[Esc] Cancel | [q] Quit",
-            _ => "[Esc] Back | [q] Quit",
-        };
+        use crate::ui::help::HelpScreen;
+
+        // Get dynamic footer help based on current screen
+        let commands = HelpScreen::get_footer_help(&self.current_screen, &self.user_context);
+        
+        let footer_text = commands
+            .iter()
+            .map(|(key, desc)| format!("{} {} ", key, desc))
+            .collect::<String>();
 
         let footer = Paragraph::new(footer_text)
             .block(Block::default().borders(Borders::ALL))
-            .alignment(Alignment::Center);
+            .alignment(Alignment::Left);
 
         frame.render_widget(footer, area);
     }
@@ -1089,7 +1088,7 @@ impl App {
 
             // Skill level field
             let skill_block = Block::default()
-                .title("Skill Level (↑/↓ to cycle)")
+                .title("Skill Level (←/→ to cycle)")
                 .borders(Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Rounded)
                 .style(if form.focus_field == crate::ui::session_edit_form::FormField::SkillLevel {
@@ -1167,5 +1166,33 @@ impl App {
             .alignment(Alignment::Left);
 
         frame.render_widget(help_para, chunks[2]);
+    }
+
+    fn render_help(&self, frame: &mut Frame, area: Rect) {
+        use crate::ui::help::HelpScreen;
+
+        let help_text = HelpScreen::get_help_text();
+        
+        let text_lines: Vec<Line> = help_text
+            .iter()
+            .map(|line| {
+                if line.starts_with("═") {
+                    Line::from(Span::styled(line.clone(), Style::default().fg(Color::Cyan)))
+                } else if line.starts_with("GLOBAL") || line.starts_with("NAVIGATION") 
+                    || line.starts_with("SESSION") || line.starts_with("DELETION") 
+                    || line.starts_with("FORM") || line.starts_with("TEXT") 
+                    || line.starts_with("FIELD") {
+                    Line::from(Span::styled(line.clone(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                } else {
+                    Line::from(line.clone())
+                }
+            })
+            .collect();
+
+        let help_para = Paragraph::new(text_lines)
+            .block(Block::default().title("Help - Keyboard Commands").borders(Borders::ALL))
+            .alignment(Alignment::Left);
+
+        frame.render_widget(help_para, area);
     }
 }

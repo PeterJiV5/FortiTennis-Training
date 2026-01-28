@@ -1,8 +1,8 @@
 # Tennis Training TUI App - Project Status
 
 **Last Updated:** January 28, 2026  
-**Current Version:** 0.5.0 (Phase 4B Complete)  
-**Project Status:** ✅ On Track - Session Management Complete!
+**Current Version:** 0.5.1 (Phase 4B+ Enhancements)  
+**Project Status:** ✅ On Track - Session Management Complete with Enhanced UX!
 
 ---
 
@@ -70,11 +70,35 @@ A multi-user terminal-based (TUI) application for tennis training management bui
 - [x] 10 comprehensive edit form unit tests
 - [x] All 83 tests passing (74 unit + 9 integration)
 
+### ✅ Phase 4B+ Enhancements: UX Improvements (Complete)
+- [x] **Vim-Style Text Editor:** Insert/normal modes for form input (TextEditor module)
+  - [x] Insert mode for character-by-character editing
+  - [x] Normal mode for navigation and deletion
+  - [x] Seamless mode toggling with [Ctrl+E]
+  - [x] 7 comprehensive unit tests
+- [x] **Help System:** Context-aware command reference (HelpScreen module)
+  - [x] Press [?] to display all available commands
+  - [x] Role-aware filtering (Coach vs Player)
+  - [x] Screen-specific command display
+  - [x] Formatted help text with color styling
+  - [x] Dismiss with [q] or [Esc]
+- [x] **Dynamic Footer:** Context-sensitive command hints
+  - [x] Shows 3-4 most relevant commands in footer
+  - [x] Automatically adapts to current screen
+  - [x] User role awareness (Coach vs Player)
+  - [x] Inline help without context switching
+- [x] All 90 tests passing (74 unit + 7 text editor + 9 integration)
+
 ---
 
 ## Current Capabilities
 
-### ✅ Coach Workflow (Phase 4B Complete!)
+### ✅ Universal Features (All Users)
+- ✅ **Press [?] to view command reference:** Help system shows all available commands for current screen
+- ✅ **Dynamic footer hints:** Context-sensitive keyboard commands displayed in footer
+- ✅ **Vim-style text editing:** Enhanced form input with insert/normal modes
+
+### ✅ Coach Workflow (Phase 4B Complete + Enhancements!)
 1. ✅ Log in via SSH as coach
 2. ✅ View home screen with personalized greeting
 3. ✅ Navigate to "Manage Sessions"
@@ -157,6 +181,13 @@ Legend:
 ---
 
 ## Keyboard Controls (Updated)
+
+### Universal Controls (All Screens)
+```
+[?]     - Display help system (command reference for current screen)
+[Esc]   - Close help screen or go back
+[q]     - Quit application
+```
 
 ### Home Screen
 ```
@@ -481,6 +512,45 @@ ssh tennis-tui@yourserver.com
 ---
 
 ## Change Log
+
+### v0.5.1 - Phase 4B+ UX Enhancements (January 28, 2026)
+**Major Features:**
+- ✅ Vim-style text editor for form input (TextEditor module)
+  - Insert/normal mode toggle with [Ctrl+E]
+  - Character-by-character editing in insert mode
+  - Vim-like navigation and deletion in normal mode
+- ✅ Help system with context-aware command reference (HelpScreen module)
+  - Press [?] to view commands for current screen
+  - Role-aware filtering (Coach vs Player)
+  - Beautiful formatted help text with color styling
+- ✅ Dynamic footer with context-sensitive command hints
+  - Shows 3-4 most relevant commands for each screen
+  - Automatically adapts to user role
+  - Inline help without leaving current context
+
+**New Modules:**
+- `src/ui/text_editor.rs` - TextEditor struct with vim-like commands
+- `src/ui/help.rs` - HelpScreen with command reference system
+
+**Tests Added:**
+- 7 new unit tests for TextEditor module
+- All text editor operations verified (insert, delete, move, toggle)
+
+**Tests:** 90 total (74 unit + 7 text editor + 9 integration), 100% pass rate  
+**Code Quality:** Clean compilation (no errors, pre-existing unused import warnings only)
+
+### v0.5.0 - Phase 4B Complete (January 28, 2026)
+**Major Features:**
+- ✅ Session editing with pre-populated forms
+- ✅ Session deletion with confirmation dialog
+- ✅ Subscription cascade handling
+- ✅ Database timestamp tracking on updates
+- ✅ Key bindings: [e] to edit, [d] to delete, [y/n] to confirm
+
+**New Files:**
+- `src/ui/session_edit_form.rs` - SessionEditForm struct
+
+**Tests:** 83 total (74 unit + 9 integration), 100% pass rate
 
 ### v0.4.0 - Phase 4A Complete (January 27, 2026)
 **Major Features:**

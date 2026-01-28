@@ -6,3 +6,4 @@ mod db_connection;
 mod db_migrations;
 mod session_form;
 mod session_edit_form;
+mod text_editor;
