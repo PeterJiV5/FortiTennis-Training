@@ -141,3 +141,32 @@ impl SessionRepository {
         })
     }
 }
+    /// Update an existing session
+    pub fn update(
+        conn: &Connection,
+        id: i64,
+        title: &str,
+        description: Option<&str>,
+        scheduled_date: Option<NaiveDate>,
+        scheduled_time: Option<NaiveTime>,
+        duration_minutes: Option<i32>,
+        skill_level: Option<&SkillLevel>,
+    ) -> Result<()> {
+        let skill_level_str = skill_level.map(|s| s.as_str());
+        let scheduled_date_str = scheduled_date.map(|d| d.format("%Y-%m-%d").to_string());
+        let scheduled_time_str = scheduled_time.map(|t| t.format("%H:%M:%S").to_string());
+
+        conn.execute(
+            "UPDATE sessions SET title = ?, description = ?, scheduled_date = ?, scheduled_time = ?, duration_minutes = ?, skill_level = ?, updated_at = datetime('now') WHERE id = ?",
+            rusqlite::params![
+                title,
+                description,
+                scheduled_date_str,
+                scheduled_time_str,
+                duration_minutes,
+                skill_level_str,
+                id,
+            ],
+        )?;
+        Ok(())
+    }

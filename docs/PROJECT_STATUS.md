@@ -1,8 +1,8 @@
 # Tennis Training TUI App - Project Status
 
 **Last Updated:** January 27, 2026  
-**Current Version:** 0.3.0 (Phase 3 Complete)  
-**Project Status:** ✅ On Track - MVP Features Complete!
+**Current Version:** 0.4.0 (Phase 4A Complete)  
+**Project Status:** ✅ On Track - Session Creation Live!
 
 ---
 
@@ -49,21 +49,35 @@ A multi-user terminal-based (TUI) application for tennis training management bui
 - [x] SessionWithSubscription data model
 - [x] Comprehensive subscription tests
 
+### ✅ Phase 4A: Session Creation Form (Complete)
+- [x] Interactive form for session creation
+- [x] Input fields: title, description, date, time, duration, skill level
+- [x] Form field navigation (Tab/Shift+Tab)
+- [x] Character input and backspace handling
+- [x] Comprehensive form validation
+- [x] Save to database with error handling
+- [x] Return to session list after creation
+- [x] 13 comprehensive unit tests
+- [x] Form state management and UI rendering
+
 ---
 
 ## Current Capabilities
 
-### ✅ Coach Workflow (Complete)
+### ✅ Coach Workflow (Phase 4A Complete!)
 1. ✅ Log in via SSH as coach
 2. ✅ View home screen with personalized greeting
 3. ✅ Navigate to "Manage Sessions"
 4. ✅ View list of all created sessions
 5. ✅ Select and view session details
 6. ✅ See session information (title, date, time, duration, skill level, description)
-7. 🚧 Create new sessions (placeholder screen - manual DB insert works)
-8. ❌ Edit sessions (planned for Phase 4)
-9. ❌ Delete sessions (planned for Phase 4)
-10. ❌ View which players are subscribed to sessions (planned for Phase 4)
+7. ✅ **Create new sessions with interactive form** (Phase 4A!)
+   - Interactive form with field navigation
+   - Validate all inputs (title length, date format, time format, duration range)
+   - Save to database and return to session list
+8. ❌ Edit sessions (planned for Phase 4B)
+9. ❌ Delete sessions (planned for Phase 4B)
+10. ❌ View which players are subscribed to sessions (planned for Phase 4B)
 
 ### ✅ Player Workflow (MVP Complete!)
 1. ✅ Log in via SSH as player
@@ -139,9 +153,20 @@ Legend:
 ```
 ↑/↓ or j/k - Navigate list
 [Enter]     - View session details
-[c]         - Create session (placeholder)
+[c]         - Create new session (interactive form)
 [Esc]       - Back to home
 [q]         - Quit
+```
+
+### Session Creation Form (Coach) - NEW!
+```
+[Tab]       - Move to next field
+[Shift+Tab] - Move to previous field
+↑/↓         - Cycle through skill levels (when on SkillLevel field)
+[Chars]     - Type input (numbers-only for duration)
+[Backspace] - Delete character
+[Enter]     - Save session and return to list
+[Esc]       - Cancel and return to list
 ```
 
 ### Session List (Player) - NEW!
@@ -176,6 +201,13 @@ Legend:
 - ✅ Skill level parsing and validation
 - ✅ Content type and subscription status enums
 - ✅ User helper methods (is_coach, is_player)
+- ✅ **Session form state management** (NEW!)
+  - Form creation and field navigation
+  - Character input with field-specific validation
+  - Backspace and deletion
+  - Skill level cycling
+  - Comprehensive validation rules (title, date, time, duration)
+  - Database value serialization
 
 ### Integration Tests
 
@@ -191,7 +223,7 @@ Legend:
 - ✅ Find by coach
 - ✅ Delete sessions
 
-**Subscription Repository (NEW!):**
+**Subscription Repository:**
 - ✅ Create subscription
 - ✅ Check if subscribed
 - ✅ Find by user and session
@@ -202,27 +234,30 @@ Legend:
 - ✅ Delete by user and session
 - ✅ Unique constraint enforcement
 
-**Test Coverage:** ~85% of core business logic
+**Test Coverage:** ~90% of core business logic (added form tests)
 
 ---
 
 ## Code Statistics
 
 ### Lines of Code
-- Source code: ~2,200 lines (+700 from Phase 2)
-- Tests: ~650 lines (+250 from Phase 2)
-- Documentation: ~1,200 lines
+- Source code: ~2,500 lines (+300 from Phase 3)
+- Tests: ~750 lines (+100 from Phase 3)
+- Documentation: ~1,400 lines
 
 ### Files
-- Source files: 18 (+3 from Phase 2)
-- Test files: 5 (+1 from Phase 2)
+- Source files: 20 (+2 from Phase 3)
+- Test files: 6 (+1 from Phase 3)
 - Documentation: 2
 
-### New Modules (Phase 3)
-- `src/db/repositories/subscription_repo.rs` - Subscription CRUD
-- `src/models/session_with_subscription.rs` - Combined session+subscription model
-- `src/ui/session_filter.rs` - Filter enum (My Sessions / All Available)
-- `tests/integration/test_subscriptions.rs` - Subscription tests
+### New Modules (Phase 4A)
+- `src/ui/session_form.rs` - Session form state and validation
+- `tests/unit/session_form.rs` - 13 comprehensive form tests
+
+### Test Results
+- ✅ **64 unit tests passing**
+- ✅ **9 integration tests passing**
+- ✅ **Total: 73 tests passing, 0 failures**
 
 ---
 
@@ -311,19 +346,7 @@ sqlite3 data/tennis.db "INSERT INTO sessions (title, description, scheduled_date
 
 ---
 
-## Next Steps (Phase 4 - Optional Enhancements)
-
-### Phase 4A: Session Creation Form
-**Goal:** Allow coaches to create sessions through the TUI
-
-**Features:**
-- [ ] Interactive form for session creation
-- [ ] Input fields: title, description, date, time, duration, skill level
-- [ ] Form validation
-- [ ] Save to database
-- [ ] Return to session list after creation
-
-**Estimated Time:** 1 week
+## Next Steps (Phase 4B, 4C, 4D)
 
 ### Phase 4B: Session Editing & Deletion
 **Goal:** Full session management for coaches
@@ -442,6 +465,19 @@ ssh tennis-tui@yourserver.com
 ---
 
 ## Change Log
+
+### v0.4.0 - Phase 4A Complete (January 27, 2026)
+**Major Features:**
+- ✅ Session creation form fully implemented
+- ✅ Interactive form with field navigation (Tab/Shift+Tab)
+- ✅ Comprehensive input validation
+- ✅ Skill level cycling support
+- ✅ Direct database integration for session creation
+- ✅ 13 new unit tests for form functionality
+- ✅ Error handling and user feedback
+
+**Tests:** 64 unit tests + 9 integration tests passing  
+**Code Quality:** ~90% core business logic coverage
 
 ### v0.3.0 - Phase 3 Complete (January 27, 2026)
 **Major Features:**

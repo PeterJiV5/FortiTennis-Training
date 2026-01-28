@@ -138,32 +138,32 @@ A multi-user TUI application for tennis training management where coaches create
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         Client Side                          │
-│                    (User's SSH Client)                       │
+│                         Client Side                         │
+│                    (User's SSH Client)                      │
 └────────────────────────┬────────────────────────────────────┘
                          │ SSH Connection
                          │
 ┌────────────────────────▼────────────────────────────────────┐
-│                      SSH Server Layer                        │
-│                    (russh or custom)                         │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  Authentication & Session Management                 │   │
-│  │  - authorized_keys mapping                           │   │
-│  │  - User identification via forced command            │   │
-│  └─────────────────────────────────────────────────────┘   │
+│                      SSH Server Layer                       │
+│                     (russh or custom)                       │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Authentication & Session Management                │    │
+│  │  - authorized_keys mapping                          │    │
+│  │  - User identification via forced command           │    │
+│  └─────────────────────────────────────────────────────┘    │
 └────────────────────────┬────────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────────┐
-│                    Application Layer                         │
-│                   (Rust TUI Application)                     │
-│  ┌──────────────────┐  ┌──────────────────┐                │
-│  │  UI Layer        │  │  Business Logic  │                │
-│  │  (Ratatui)       │◄─┤  Layer           │                │
-│  │  - Screens       │  │  - Session mgmt  │                │
-│  │  - Components    │  │  - User mgmt     │                │
-│  │  - Navigation    │  │  - Subscription  │                │
-│  └──────────────────┘  └────────┬─────────┘                │
-│                                  │                           │
+│                    Application Layer                        │
+│                   (Rust TUI Application)                    │
+│  ┌──────────────────┐  ┌──────────────────┐                 │
+│  │  UI Layer        │  │  Business Logic  │                 │
+│  │  (Ratatui)       │◄─┤  Layer           │                 │
+│  │  - Screens       │  │  - Session mgmt  │                 │
+│  │  - Components    │  │  - User mgmt     │                 │
+│  │  - Navigation    │  │  - Subscription  │                 │
+│  └──────────────────┘  └─────────┬────────┘                 │
+│                                  │                          │
 │                         ┌────────▼─────────┐                │
 │                         │  Data Access     │                │
 │                         │  Layer           │                │
@@ -484,10 +484,10 @@ pub enum SubscriptionStatus {
      │   └──────────┐       │
      │              │       │
      ▼              ▼       │
-┌──────────┐  ┌──────────┐ │
-│ Sessions │  │ Players  │ │
-│  List    │  │   List   │ │
-└────┬─────┘  └──────────┘ │
+┌──────────┐  ┌──────────┐  │
+│ Sessions │  │ Players  │  │
+│  List    │  │   List   │  │
+└────┬─────┘  └──────────┘  │
      │                      │
      ├─► Create Session ────┤
      ├─► Edit Session ──────┤
@@ -518,10 +518,10 @@ pub enum SubscriptionStatus {
      │   └──────────┐       │
      │              │       │
      ▼              ▼       │
-┌──────────┐  ┌──────────┐ │
-│   My     │  │  Browse  │ │
-│ Sessions │  │ Sessions │ │
-└────┬─────┘  └────┬─────┘ │
+┌──────────┐  ┌──────────┐  │
+│   My     │  │  Browse  │  │
+│ Sessions │  │ Sessions │  │
+└────┬─────┘  └────┬─────┘  │
      │             │        │
      ├─► View ─────┼────────┤
      ├─► Complete ─┤        │

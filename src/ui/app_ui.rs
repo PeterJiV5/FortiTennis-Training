@@ -14,6 +14,7 @@ use crate::db::repositories::{SessionRepository, SubscriptionRepository};
 use crate::models::SessionWithSubscription;
 use crate::ui::navigation::Screen;
 use crate::ui::session_filter::SessionFilter;
+use crate::ui::session_form::SessionForm;
 
 pub struct App {
     pub user_context: UserContext,
@@ -24,6 +25,7 @@ pub struct App {
     pub db_path: String,
     pub session_filter: SessionFilter,
     pub message: Option<String>,
+    pub session_form: SessionForm,
 }
 
 impl App {
@@ -37,6 +39,7 @@ impl App {
             db_path,
             session_filter: SessionFilter::MySubscriptions,
             message: None,
+            session_form: SessionForm::new(),
         }
     }
 
@@ -59,18 +62,29 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) {
+        // Handle form input separately
+        if self.current_screen == Screen::SessionCreate {
+            self.handle_form_key_event(key);
+            return;
+        }
+
         // Clear message on any key press
         self.message = None;
 
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
-                // If on home screen, quit; otherwise go back to home
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                // Quit only from home screen
                 if self.current_screen == Screen::Home {
                     self.should_quit = true;
                 } else {
                     self.current_screen = Screen::Home;
                     self.selected_index = 0;
                 }
+            }
+            KeyCode::Esc => {
+                // Go back/cancel
+                self.current_screen = Screen::Home;
+                self.selected_index = 0;
             }
             KeyCode::Char('1') => {
                 self.current_screen = Screen::Home;
@@ -83,6 +97,7 @@ impl App {
             KeyCode::Char('c') | KeyCode::Char('C') => {
                 // Create session (coach only)
                 if self.user_context.is_coach() && self.current_screen == Screen::SessionList {
+                    self.session_form = SessionForm::new();
                     self.current_screen = Screen::SessionCreate;
                 }
             }
@@ -124,6 +139,96 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn handle_form_key_event(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Tab => {
+                self.session_form.next_field();
+            }
+            KeyCode::BackTab => {
+                self.session_form.prev_field();
+            }
+            KeyCode::Char(c) => {
+                self.session_form.add_char(c);
+            }
+            KeyCode::Backspace => {
+                self.session_form.backspace();
+            }
+            KeyCode::Left => {
+                // For skill level navigation
+                if self.session_form.focus_field == crate::ui::session_form::FormField::SkillLevel {
+                    self.session_form.focus_field = crate::ui::session_form::FormField::DurationMinutes;
+                }
+            }
+            KeyCode::Right => {
+                // For skill level navigation
+                if self.session_form.focus_field == crate::ui::session_form::FormField::SkillLevel {
+                    self.session_form.cycle_skill_level_forward();
+                }
+            }
+            KeyCode::Up => {
+                self.session_form.prev_field();
+            }
+            KeyCode::Down => {
+                self.session_form.next_field();
+            }
+            KeyCode::Enter => {
+                // Validate and save
+                match self.session_form.validate() {
+                    Ok(()) => {
+                        self.save_session();
+                    }
+                    Err(e) => {
+                        self.message = Some(format!("Error: {}", e));
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                self.current_screen = Screen::SessionList;
+                self.load_sessions();
+            }
+            _ => {}
+        }
+    }
+
+    fn save_session(&mut self) {
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            let (title, description, date, time, duration, skill_level_str) = self.session_form.as_db_values();
+            
+            // Parse skill level
+            let skill_level = crate::models::SkillLevel::from_str(&skill_level_str);
+            
+            // Parse dates/times
+            let date_parsed = date.as_ref().and_then(|d| {
+                chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
+            });
+            let time_parsed = time.as_ref().and_then(|t| {
+                chrono::NaiveTime::parse_from_str(t, "%H:%M").ok()
+            });
+            
+            match SessionRepository::create(
+                &conn,
+                &title,
+                if description.is_empty() { None } else { Some(description.as_str()) },
+                date_parsed,
+                time_parsed,
+                duration,
+                skill_level.as_ref(),
+                self.user_context.user.id,
+            ) {
+                Ok(_) => {
+                    self.message = Some("Session created successfully!".to_string());
+                    self.current_screen = Screen::SessionList;
+                    self.load_sessions();
+                }
+                Err(e) => {
+                    self.message = Some(format!("Error saving session: {:?}", e));
+                }
+            }
+        } else {
+            self.message = Some("Error connecting to database".to_string());
         }
     }
 
@@ -600,32 +705,126 @@ impl App {
     }
 
     fn render_session_create(&self, frame: &mut Frame, area: Rect) {
-        let content = vec![
+        let title = "Create New Session";
+        let form = &self.session_form;
+
+        // Split area into form area and info area
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![
+                Constraint::Min(20),
+                Constraint::Length(3),
+            ])
+            .split(area);
+
+        // Form fields
+        let mut form_lines = vec![
             Line::from(""),
-            Line::from(Span::styled(
-                "Create Session",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )),
+            Line::from(vec![
+                Span::styled(
+                    "Title: ",
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(&form.title),
+                if form.focus_field == crate::ui::session_form::FormField::Title {
+                    Span::styled("▼", Style::default().fg(Color::Green))
+                } else {
+                    Span::raw("")
+                },
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "Description: ",
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(&form.description),
+                if form.focus_field == crate::ui::session_form::FormField::Description {
+                    Span::styled("▼", Style::default().fg(Color::Green))
+                } else {
+                    Span::raw("")
+                },
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "Date (YYYY-MM-DD): ",
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(&form.scheduled_date),
+                if form.focus_field == crate::ui::session_form::FormField::ScheduledDate {
+                    Span::styled("▼", Style::default().fg(Color::Green))
+                } else {
+                    Span::raw("")
+                },
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "Time (HH:MM): ",
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(&form.scheduled_time),
+                if form.focus_field == crate::ui::session_form::FormField::ScheduledTime {
+                    Span::styled("▼", Style::default().fg(Color::Green))
+                } else {
+                    Span::raw("")
+                },
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "Duration (minutes): ",
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(&form.duration_minutes),
+                if form.focus_field == crate::ui::session_form::FormField::DurationMinutes {
+                    Span::styled("▼", Style::default().fg(Color::Green))
+                } else {
+                    Span::raw("")
+                },
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "Skill Level: ",
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(&form.skill_level),
+                if form.focus_field == crate::ui::session_form::FormField::SkillLevel {
+                    Span::styled("▼", Style::default().fg(Color::Green))
+                } else {
+                    Span::raw("")
+                },
+            ]),
             Line::from(""),
-            Line::from("Session creation form will be implemented in the next phase."),
-            Line::from(""),
-            Line::from("For now, you can add sessions directly to the database:"),
-            Line::from(""),
-            Line::from("  sqlite3 data/tennis.db"),
-            Line::from("  INSERT INTO sessions (title, description, created_by, created_at, updated_at)"),
-            Line::from("  VALUES ('Test Session', 'A test session', 1, datetime('now'), datetime('now'));"),
         ];
 
-        let paragraph = Paragraph::new(content)
+        let paragraph = Paragraph::new(form_lines)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Create Session"),
+                    .title(title)
+                    .style(Style::default().fg(Color::White)),
             )
-            .alignment(Alignment::Center);
+            .alignment(Alignment::Left);
 
-        frame.render_widget(paragraph, area);
+        frame.render_widget(paragraph, chunks[0]);
+
+        // Help text
+        let help_text = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("[Tab]", Style::default().fg(Color::Cyan)),
+                Span::raw(" Next field  "),
+                Span::styled("[Shift+Tab]", Style::default().fg(Color::Cyan)),
+                Span::raw(" Prev field  "),
+                Span::styled("[Enter]", Style::default().fg(Color::Cyan)),
+                Span::raw(" Save  "),
+                Span::styled("[Esc]", Style::default().fg(Color::Cyan)),
+                Span::raw(" Cancel"),
+            ]),
+        ];
+
+        let help_para = Paragraph::new(help_text)
+            .block(Block::default().borders(Borders::BOTTOM))
+            .alignment(Alignment::Left);
+
+        frame.render_widget(help_para, chunks[1]);
     }
 }
