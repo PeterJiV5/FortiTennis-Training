@@ -1,8 +1,8 @@
 # Tennis Training TUI App - Project Status
 
-**Last Updated:** January 28, 2026  
-**Current Version:** 0.6.0 (Phase 4C - Training Content Management)  
-**Project Status:** ✅ On Track - Training Content Management Implemented!
+**Last Updated:** January 29, 2026  
+**Current Version:** 0.7.0 (Phase 5 - Training Templates & Cursor Memory)  
+**Project Status:** 🚀 Phase 5 Started - Database & Models Foundation Complete!
 
 ---
 
@@ -540,14 +540,31 @@ sqlite3 data/tennis.db "INSERT INTO sessions (title, description, scheduled_date
 
 **Estimated Time:** 1-2 weeks
 
-### Phase 5: Training Templates & Cursor Memory (Planned - Not Started)
+### Phase 5: Training Templates & Cursor Memory (In Progress - Phase 5.1a Complete! ✅)
 
 **Goal**: Reduce content duplication and improve UX with persistent navigation state
 
-#### 5.1 Training Templates System (Designed)
+#### 5.1a: Database & Models (✅ COMPLETE)
+- [x] Database migration: training_templates table (11 columns with audit fields)
+- [x] Database migration: session_training_links junction table (5 columns)
+- [x] Models: TrainingTemplate, SessionTrainingLink, SessionTrainingLinkWithTemplate, TemplateAuditInfo
+- [x] Repository: TrainingTemplateRepository (8 CRUD methods with audit tracking)
+- [x] Repository: SessionTrainingLinkRepository (7 methods for linking/reordering)
+- [x] Unit tests: template creation, audit tracking, cursor memory logic
+- [x] All 102 tests passing (90 existing + 7 Phase 5 + 5 cursor memory tests)
+- [x] Compilation verified (0 errors)
+
+**Databases**: Created tables: `training_templates` (11 cols), `session_training_links` (5 cols)  
+**Models**: TrainingTemplate, TemplateAuditInfo, SessionTrainingLink, SessionTrainingLinkWithTemplate  
+**Repositories**: TrainingTemplateRepository (8 methods), SessionTrainingLinkRepository (7 methods)  
+**Tests**: /tests/unit/templates/ and /tests/unit/cursor_memory/ with 12 test cases  
+**Code Commit**: 5528ef8 - "feat: Phase 5.1a - Training templates models and repositories"
+
+#### 5.1b: Training Templates System (In Progress)
 - [ ] Database migration: training_content → training_templates + links
+- [ ] Service layer: template CRUD with validation
 - [ ] New screens: Template library, create/edit templates
-- [ ] Audit tracking: Creator and last-editor metadata
+- [ ] Audit tracking: Creator and last-editor metadata (implemented in DB, UI pending)
 - [ ] Session integration: Hybrid binding (reference with overrides)
 - [ ] UI: Template picker when adding content to sessions
 - [ ] Features:
@@ -556,8 +573,12 @@ sqlite3 data/tennis.db "INSERT INTO sessions (title, description, scheduled_date
   - Per-session customization (override template values)
   - Template usage tracking (see which sessions use a template)
 
-**Database**: New tables: `training_templates`, `session_training_links` with audit fields  
-**Tests**: Separate unit test folder `/tests/unit/templates/`  
+#### 5.2: Cursor Position Memory (Pending)
+- [ ] App struct: Add HashMap for cursor position tracking
+- [ ] Session-aware context keys (e.g., "session_detail:123")
+- [ ] Methods: save_cursor_position(), restore_cursor_position()
+- [ ] Integration: Key handlers for automatic save/restore
+- [ ] Tests: Position restoration, context awareness, multiple sessions  
 **Documentation**: Complete (see DESIGN.md Section 9.1)
 
 #### 5.2 Cursor Position Memory (Designed)
