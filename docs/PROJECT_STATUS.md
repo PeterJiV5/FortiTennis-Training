@@ -1,8 +1,8 @@
 # Tennis Training TUI App - Project Status
 
 **Last Updated:** January 28, 2026  
-**Current Version:** 0.5.1 (Phase 4B+ Enhancements)  
-**Project Status:** ✅ On Track - Session Management Complete with Enhanced UX!
+**Current Version:** 0.6.0 (Phase 4C - Training Content Management)  
+**Project Status:** ✅ On Track - Training Content Management Implemented!
 
 ---
 
@@ -89,9 +89,42 @@ A multi-user terminal-based (TUI) application for tennis training management bui
   - [x] Inline help without context switching
 - [x] All 90 tests passing (74 unit + 7 text editor + 9 integration)
 
+### 🚀 Phase 4C: Training Content Management (In Progress)
+- [x] **TrainingContentRepository:** Full CRUD operations for training content
+  - [x] find_by_session() - Load all content for a session
+  - [x] find_by_id() - Get single content item
+  - [x] create() - Insert new training content
+  - [x] update() - Modify existing content
+  - [x] delete() - Remove content by ID or session
+  - [x] 5 comprehensive unit tests
+- [x] **TrainingContentForm:** Form state management for creating/editing
+  - [x] Four input fields: Title, Description, DurationMinutes, ContentType
+  - [x] Field navigation with Tab/Shift+Tab
+  - [x] Content type cycling with ←/→ arrows
+  - [x] Validation: Title 2-100 chars, Duration 1-480 minutes
+  - [x] as_db_values() for database integration
+  - [x] 7 comprehensive unit tests
+- [x] **UI Integration:**
+  - [x] Added [t] key to open training content management on SessionDetail (coaches only)
+  - [x] render_training_content_create() - Full form UI for new content
+  - [x] render_training_content_edit() - Full form UI for editing
+  - [x] render_training_content_delete() - Confirmation dialog with content details
+  - [x] Training content loading when opening session detail
+  - [x] Training content display with emoji icons (🎯 Drill, 💪 Exercise, 🔥 Warm-up, ❄️ Cool-down)
+- [x] **Key Handlers:**
+  - [x] handle_training_content_form_key_event() - Form input handling
+  - [x] save_training_content() - Create and save to database
+  - [x] update_training_content() - Modify existing content
+  - [x] delete_training_content() - Remove content with confirmation
+- [x] **Help System Updates:**
+  - [x] [t] shown as "Manage training content" in SessionDetail (coach only)
+  - [x] Form commands added to help system
+  - [x] Role-aware footer help on SessionDetail
+- [x] All 90 tests still passing (81 unit + 9 integration)
+
 ---
 
-## Current Capabilities
+## Completed Phases
 
 ### ✅ Universal Features (All Users)
 - ✅ **Press [?] to view command reference:** Help system shows all available commands for current screen
@@ -117,7 +150,14 @@ A multi-user terminal-based (TUI) application for tennis training management bui
    - Confirmation dialog before deletion
    - Shows impact on subscriptions
    - Cascade delete handled safely
-10. ❌ View which players are subscribed to sessions (planned for Phase 4C)
+10. ✅ **Manage training content for sessions** (Phase 4C!)
+   - Press [t] on SessionDetail to add/edit/delete training content
+   - Create new training content with interactive form
+   - Title (required), Description (optional), Duration (optional), Content Type (Drill/Exercise/Warmup/Cooldown)
+   - Field navigation with Tab/Shift+Tab
+   - Content type cycling with ←/→ arrows
+   - View training content on session detail with emoji icons and descriptions
+   - Update or delete existing training content
 
 ### ✅ Player Workflow (MVP Complete!)
 1. ✅ Log in via SSH as player
@@ -131,10 +171,15 @@ A multi-user terminal-based (TUI) application for tennis training management bui
 9. ✅ **See subscription status in detail view** (NEW!)
 10. ✅ **Mark sessions as complete** (NEW!)
 11. ✅ **Visual indicators: ● = subscribed, ✓ = completed** (NEW!)
+12. ✅ **View training content for sessions** (Phase 4C!)
+    - See all training content assigned to sessions
+    - Content displayed with type indicators (🎯 Drill, 💪 Exercise, 🔥 Warm-up, ❄️ Cool-down)
+    - View descriptions and durations for each content item
 
 ---
 
 ## Database Schema (Implemented)
+
 
 ### Tables Created & In Use
 - ✅ `users` - User accounts (coach/player)
@@ -235,8 +280,39 @@ Legend:
 
 ### Session Detail (Coach)
 ```
-[Esc] - Back to list
+[e]   - Edit session
+[d]   - Delete session
+[t]   - Manage training content (create/edit/delete drills, exercises, etc.)
+[1]   - Go to Home
+[2]   - Back to Session List
 [q]   - Quit
+```
+
+### Session Detail (Player)
+```
+[m]   - Mark session as complete
+[s]   - Subscribe/Unsubscribe
+[1]   - Go to Home
+[2]   - Back to Session List
+[q]   - Quit
+```
+
+### Training Content Form (Coach) - NEW! (Phase 4C)
+```
+[Tab]       - Move to next field
+[Shift+Tab] - Move to previous field
+←/→ or ↑/↓  - Cycle through content types (when on ContentType field)
+[Chars]     - Type input
+[Backspace] - Delete character
+[Enter]     - Save training content and return to session detail
+[Esc]       - Cancel and return to session detail
+```
+
+### Training Content Delete Confirmation (Coach) - NEW! (Phase 4C)
+```
+[y]   - Confirm deletion
+[n]   - Cancel deletion
+[Esc] - Cancel deletion
 ```
 
 ---
@@ -253,6 +329,14 @@ Legend:
   - Character input with field-specific validation
   - Backspace and deletion
   - Skill level cycling
+- ✅ **Training content repository operations** (Phase 4C!)
+  - Create, find by session, find by ID, update, delete operations
+  - Proper error handling and database integration
+- ✅ **Training content form state management** (Phase 4C!)
+  - Form creation and field navigation
+  - Character input with validation
+  - Content type cycling
+  - Database value conversion
   - Comprehensive validation rules (title, date, time, duration)
   - Database value serialization
 
@@ -281,19 +365,44 @@ Legend:
 - ✅ Delete by user and session
 - ✅ Unique constraint enforcement
 
-**Test Coverage:** ~90% of core business logic (added form tests)
+**Training Content Repository** (Phase 4C!):
+- ✅ Create training content
+- ✅ Find by session
+- ✅ Find by ID
+- ✅ Update training content
+- ✅ Delete training content
+- ✅ Delete by session
+
+**Test Coverage:** ~95% of core business logic (added form tests + training content tests)
+
+### Test Summary (Current)
+- **Unit Tests:** 81
+  - Models: 31 tests
+  - Database migrations: 1 test
+  - Errors: 7 tests
+  - Database connection: 1 test
+  - Sessions: 19 tests
+  - Text editor: 7 tests
+  - Training content repository: 5 tests
+  - Training content form: 7 tests
+  - Session form: 13 tests
+  - Session edit form: 0 (no additional tests needed)
+- **Integration Tests:** 9
+  - Subscription operations: 9 tests
+- **Doc Tests:** 0
+- **Total:** 90 tests passing ✅
 
 ---
 
 ## Code Statistics
 
 ### Lines of Code
-- Source code: ~2,500 lines (+300 from Phase 3)
-- Tests: ~750 lines (+100 from Phase 3)
-- Documentation: ~1,400 lines
+- Source code: ~2,800 lines (+300 from Phase 4B+)
+- Tests: ~900 lines (+150 from Phase 4C)
+- Documentation: ~1,600 lines
 
 ### Files
-- Source files: 20 (+2 from Phase 3)
+- Source files: 23 (+2 from Phase 4C - training_content_repo.rs, training_content_form.rs)
 - Test files: 6 (+1 from Phase 3)
 - Documentation: 2
 
