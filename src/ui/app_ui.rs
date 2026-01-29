@@ -8,6 +8,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use std::io;
+use std::str::FromStr;
 
 use crate::auth::UserContext;
 use crate::db::repositories::{SessionRepository, SubscriptionRepository, TrainingContentRepository};
@@ -16,6 +17,9 @@ use crate::ui::navigation::Screen;
 use crate::ui::session_filter::SessionFilter;
 use crate::ui::session_form::SessionForm;
 use crate::ui::session_edit_form::SessionEditForm;
+use crate::ui::text_editor::TextEditor;
+use crate::ui::help::HelpScreen;
+use crate::ui::training_content_form::TrainingContentForm;
 
 pub struct App {
     pub user_context: UserContext,
@@ -30,6 +34,8 @@ pub struct App {
     pub session_edit_form: Option<SessionEditForm>,
     pub delete_confirmation: bool,
     pub training_content: Vec<TrainingContent>,
+    pub training_content_form: TrainingContentForm,
+    pub training_content_selected_index: usize,
 }
 
 impl App {
@@ -47,6 +53,8 @@ impl App {
             session_edit_form: None,
             delete_confirmation: false,
             training_content: Vec::new(),
+            training_content_form: TrainingContentForm::new(),
+            training_content_selected_index: 0,
         }
     }
 
@@ -75,12 +83,20 @@ impl App {
             return;
         }
 
+        // Handle training content form input
+        if matches!(self.current_screen, Screen::TrainingContentCreate(_) | Screen::TrainingContentEdit(_)) {
+            self.handle_training_content_form_key_event(key);
+            return;
+        }
+
         // Handle delete confirmation
-        if matches!(self.current_screen, Screen::SessionDelete(_)) {
+        if matches!(self.current_screen, Screen::SessionDelete(_) | Screen::TrainingContentDelete(_)) {
             match key.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
                     if let Screen::SessionDelete(session_id) = self.current_screen {
                         self.delete_session(session_id);
+                    } else if let Screen::TrainingContentDelete(content_id) = self.current_screen {
+                        self.delete_training_content(content_id);
                     }
                 }
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
@@ -154,6 +170,15 @@ impl App {
                 if self.user_context.is_player() {
                     if let Screen::SessionDetail(session_id) = self.current_screen {
                         self.mark_session_complete(session_id);
+                    }
+                }
+            }
+            KeyCode::Char('t') | KeyCode::Char('T') => {
+                // Training content management (coach only, on session detail)
+                if self.user_context.is_coach() {
+                    if let Screen::SessionDetail(session_id) = self.current_screen {
+                        self.training_content_form = TrainingContentForm::new();
+                        self.current_screen = Screen::TrainingContentCreate(session_id);
                     }
                 }
             }
@@ -322,6 +347,59 @@ impl App {
         }
     }
 
+    fn handle_training_content_form_key_event(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Tab => {
+                self.training_content_form.next_field();
+            }
+            KeyCode::BackTab => {
+                self.training_content_form.prev_field();
+            }
+            KeyCode::Char(c) => {
+                self.training_content_form.add_char(c);
+            }
+            KeyCode::Backspace => {
+                self.training_content_form.backspace();
+            }
+            KeyCode::Left | KeyCode::Up => {
+                // For content type cycling backwards
+                if self.training_content_form.focus_field == crate::ui::training_content_form::FormField::ContentType {
+                    self.training_content_form.focus_field = crate::ui::training_content_form::FormField::DurationMinutes;
+                } else {
+                    self.training_content_form.prev_field();
+                }
+            }
+            KeyCode::Right | KeyCode::Down => {
+                // For content type cycling forward
+                if self.training_content_form.focus_field == crate::ui::training_content_form::FormField::ContentType {
+                    self.training_content_form.cycle_content_type_forward();
+                } else {
+                    self.training_content_form.next_field();
+                }
+            }
+            KeyCode::Enter => {
+                // Validate and save training content
+                match self.training_content_form.validate() {
+                    Ok(()) => {
+                        if let Screen::TrainingContentCreate(session_id) = self.current_screen {
+                            self.save_training_content(session_id);
+                        } else if let Screen::TrainingContentEdit(content_id) = self.current_screen {
+                            self.update_training_content(content_id);
+                        }
+                    }
+                    Err(err) => {
+                        self.message = Some(format!("Validation error: {}", err));
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                self.current_screen = Screen::SessionList;
+                self.load_sessions();
+            }
+            _ => {}
+        }
+    }
+
     fn save_session(&mut self) {
         if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
             let (title, description, date, time, duration, skill_level_str) = self.session_form.as_db_values();
@@ -413,6 +491,113 @@ impl App {
                 }
                 Err(e) => {
                     self.message = Some(format!("Error deleting session: {:?}", e));
+                }
+            }
+        } else {
+            self.message = Some("Error connecting to database".to_string());
+        }
+    }
+
+    fn save_training_content(&mut self, session_id: i64) {
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            let (title, description, duration, content_type_str) = self.training_content_form.as_db_values();
+            
+            // Parse content type
+            let content_type = crate::models::ContentType::from_str(&content_type_str)
+                .unwrap_or(crate::models::ContentType::Drill);
+            
+            // Empty description means None
+            let desc = if description.is_empty() { None } else { Some(description.as_str()) };
+            
+            // Calculate order index (next available)
+            let order_index = (self.training_content.len() as i32) + 1;
+            
+            match TrainingContentRepository::create(
+                &conn,
+                session_id,
+                &content_type,
+                &title,
+                desc,
+                duration,
+                order_index,
+            ) {
+                Ok(_) => {
+                    self.message = Some("Training content created successfully!".to_string());
+                    self.current_screen = Screen::SessionDetail(session_id);
+                    // Reload training content
+                    if let Ok(content) = TrainingContentRepository::find_by_session(&conn, session_id) {
+                        self.training_content = content;
+                    }
+                }
+                Err(e) => {
+                    self.message = Some(format!("Error creating content: {:?}", e));
+                }
+            }
+        } else {
+            self.message = Some("Error connecting to database".to_string());
+        }
+    }
+
+    fn update_training_content(&mut self, content_id: i64) {
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            let (title, description, duration, content_type_str) = self.training_content_form.as_db_values();
+            
+            // Parse content type
+            let content_type = crate::models::ContentType::from_str(&content_type_str)
+                .unwrap_or(crate::models::ContentType::Drill);
+            
+            // Empty description means None
+            let desc = if description.is_empty() { None } else { Some(description.as_str()) };
+            
+            // Find the current content to get session_id and order
+            if let Some(current) = self.training_content.iter().find(|c| c.id == content_id) {
+                let session_id = current.session_id;
+                
+                match TrainingContentRepository::update(
+                    &conn,
+                    content_id,
+                    &content_type,
+                    &title,
+                    desc,
+                    duration,
+                    current.order_index,
+                ) {
+                    Ok(_) => {
+                        self.message = Some("Training content updated successfully!".to_string());
+                        self.current_screen = Screen::SessionDetail(session_id);
+                        // Reload training content
+                        if let Ok(content) = TrainingContentRepository::find_by_session(&conn, session_id) {
+                            self.training_content = content;
+                        }
+                    }
+                    Err(e) => {
+                        self.message = Some(format!("Error updating content: {:?}", e));
+                    }
+                }
+            }
+        } else {
+            self.message = Some("Error connecting to database".to_string());
+        }
+    }
+
+    fn delete_training_content(&mut self, content_id: i64) {
+        if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
+            // Find the session_id for this content
+            if let Some(current) = self.training_content.iter().find(|c| c.id == content_id) {
+                let session_id = current.session_id;
+                
+                match TrainingContentRepository::delete(&conn, content_id) {
+                    Ok(_) => {
+                        self.message = Some("Training content deleted successfully!".to_string());
+                        self.current_screen = Screen::SessionDetail(session_id);
+                        // Reload training content
+                        if let Ok(content) = TrainingContentRepository::find_by_session(&conn, session_id) {
+                            self.training_content = content;
+                        }
+                    }
+                    Err(e) => {
+                        self.message = Some(format!("Error deleting content: {:?}", e));
+                    }
                 }
             }
         } else {
@@ -1242,23 +1427,202 @@ impl App {
     }
 
     fn render_training_content_create(&self, frame: &mut Frame, area: Rect, _session_id: i64) {
-        let msg = Paragraph::new("Training Content Creation - [TODO]")
-            .block(Block::default().title("Create Training Content").borders(Borders::ALL))
-            .alignment(Alignment::Center);
-        frame.render_widget(msg, area);
+        let form = &self.training_content_form;
+        
+        // Layout for form fields
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Min(1),
+            ])
+            .split(area);
+
+        // Title field
+        let title_block = Block::default()
+            .title("Title (required, 2-100 chars)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::Title {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let title_para = Paragraph::new(form.title.as_str()).block(title_block);
+        frame.render_widget(title_para, chunks[1]);
+
+        // Description field
+        let desc_block = Block::default()
+            .title("Description (optional, max 500 chars)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::Description {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let desc_para = Paragraph::new(form.description.as_str()).block(desc_block);
+        frame.render_widget(desc_para, chunks[2]);
+
+        // Duration field
+        let duration_block = Block::default()
+            .title("Duration in minutes (optional, 1-480)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::DurationMinutes {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let duration_para = Paragraph::new(form.duration_minutes.as_str()).block(duration_block);
+        frame.render_widget(duration_para, chunks[3]);
+
+        // Content type field
+        let content_type_block = Block::default()
+            .title("Content Type (←/→ to cycle)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::ContentType {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let content_type_para = Paragraph::new(form.content_type.as_str()).block(content_type_block);
+        frame.render_widget(content_type_para, chunks[4]);
+
+        // Footer with help
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("[Tab] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Next field  "),
+                Span::styled("[Shift+Tab] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Previous field  "),
+                Span::styled("[Enter] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Save  "),
+                Span::styled("[Esc] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Cancel"),
+            ]),
+        ];
+        let help_para = Paragraph::new(help_text);
+        frame.render_widget(help_para, chunks[5]);
     }
 
     fn render_training_content_edit(&self, frame: &mut Frame, area: Rect, _content_id: i64) {
-        let msg = Paragraph::new("Training Content Edit - [TODO]")
-            .block(Block::default().title("Edit Training Content").borders(Borders::ALL))
-            .alignment(Alignment::Center);
-        frame.render_widget(msg, area);
+        let form = &self.training_content_form;
+        
+        // Layout for form fields
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Min(1),
+            ])
+            .split(area);
+
+        // Title field
+        let title_block = Block::default()
+            .title("Title (required, 2-100 chars)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::Title {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let title_para = Paragraph::new(form.title.as_str()).block(title_block);
+        frame.render_widget(title_para, chunks[1]);
+
+        // Description field
+        let desc_block = Block::default()
+            .title("Description (optional, max 500 chars)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::Description {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let desc_para = Paragraph::new(form.description.as_str()).block(desc_block);
+        frame.render_widget(desc_para, chunks[2]);
+
+        // Duration field
+        let duration_block = Block::default()
+            .title("Duration in minutes (optional, 1-480)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::DurationMinutes {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let duration_para = Paragraph::new(form.duration_minutes.as_str()).block(duration_block);
+        frame.render_widget(duration_para, chunks[3]);
+
+        // Content type field
+        let content_type_block = Block::default()
+            .title("Content Type (←/→ to cycle)")
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .style(if form.focus_field == crate::ui::training_content_form::FormField::ContentType {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            });
+        let content_type_para = Paragraph::new(form.content_type.as_str()).block(content_type_block);
+        frame.render_widget(content_type_para, chunks[4]);
+
+        // Footer with help
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("[Tab] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Next field  "),
+                Span::styled("[Shift+Tab] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Previous field  "),
+                Span::styled("[Enter] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Update  "),
+                Span::styled("[Esc] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("Cancel"),
+            ]),
+        ];
+        let help_para = Paragraph::new(help_text);
+        frame.render_widget(help_para, chunks[5]);
     }
 
-    fn render_training_content_delete(&self, frame: &mut Frame, _content_id: i64) {
-        let msg = Paragraph::new("Training Content Deletion - [TODO]")
-            .block(Block::default().title("Delete Training Content").borders(Borders::ALL))
-            .alignment(Alignment::Center);
-        frame.render_widget(msg, frame.size());
+    fn render_training_content_delete(&self, frame: &mut Frame, content_id: i64) {
+        // Find the content to get details
+        if let Some(content) = self.training_content.iter().find(|c| c.id == content_id) {
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Confirm deletion of training content?",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(format!("Title: {}", content.title)),
+                Line::from(format!("Type: {:?}", content.content_type)),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Press [y] to confirm or [n] to cancel",
+                    Style::default().fg(Color::Yellow),
+                )),
+            ];
+            let para = Paragraph::new(lines)
+                .block(Block::default().title("Delete Training Content").borders(Borders::ALL))
+                .alignment(Alignment::Left);
+            frame.render_widget(para, frame.size());
+        } else {
+            let msg = Paragraph::new("Content not found")
+                .block(Block::default().title("Error").borders(Borders::ALL))
+                .alignment(Alignment::Center);
+            frame.render_widget(msg, frame.size());
+        }
     }
 }

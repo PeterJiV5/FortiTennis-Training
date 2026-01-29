@@ -43,6 +43,7 @@ impl HelpScreen {
                     vec![
                         ("[e]", "Edit this session"),
                         ("[d]", "Delete this session"),
+                        ("[t]", "Manage training content"),
                         ("[1]", "Go to Home"),
                         ("[2]", "Back to Session List"),
                         ("[q]", "Go to Home"),
@@ -121,11 +122,21 @@ impl HelpScreen {
                     ]
                 }
             }
-            Screen::SessionDetail(_) => vec![
-                ("[1]", "Home"),
-                ("[2]", "Back"),
-                ("[?]", "Help"),
-            ],
+            Screen::SessionDetail(_) => {
+                if user_context.is_coach() {
+                    vec![
+                        ("[t]", "Training"),
+                        ("[e]", "Edit"),
+                        ("[2]", "Back"),
+                    ]
+                } else {
+                    vec![
+                        ("[m]", "Complete"),
+                        ("[s]", "Subscribe"),
+                        ("[2]", "Back"),
+                    ]
+                }
+            }
             Screen::SessionCreate => vec![
                 ("[Tab]", "Next"),
                 ("[Enter]", "Save"),
