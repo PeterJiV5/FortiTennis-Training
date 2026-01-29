@@ -10,8 +10,8 @@ use ratatui::{
 use std::io;
 
 use crate::auth::UserContext;
-use crate::db::repositories::{SessionRepository, SubscriptionRepository};
-use crate::models::SessionWithSubscription;
+use crate::db::repositories::{SessionRepository, SubscriptionRepository, TrainingContentRepository};
+use crate::models::{SessionWithSubscription, TrainingContent};
 use crate::ui::navigation::Screen;
 use crate::ui::session_filter::SessionFilter;
 use crate::ui::session_form::SessionForm;
@@ -29,6 +29,7 @@ pub struct App {
     pub session_form: SessionForm,
     pub session_edit_form: Option<SessionEditForm>,
     pub delete_confirmation: bool,
+    pub training_content: Vec<TrainingContent>,
 }
 
 impl App {
@@ -45,6 +46,7 @@ impl App {
             session_form: SessionForm::new(),
             session_edit_form: None,
             delete_confirmation: false,
+            training_content: Vec::new(),
         }
     }
 
@@ -116,6 +118,7 @@ impl App {
                 } else {
                     self.current_screen = Screen::Home;
                     self.selected_index = 0;
+                    self.training_content.clear();
                 }
             }
             KeyCode::Char('1') => {
@@ -168,6 +171,13 @@ impl App {
                 if self.current_screen == Screen::SessionList && !self.sessions.is_empty() {
                     let session_id = self.sessions[self.selected_index].session.id;
                     self.current_screen = Screen::SessionDetail(session_id);
+                    
+                    // Load training content for this session
+                    if let Ok(conn) = crate::db::connection::establish_connection(&self.db_path) {
+                        if let Ok(content) = TrainingContentRepository::find_by_session(&conn, session_id) {
+                            self.training_content = content;
+                        }
+                    }
                 }
             }
             KeyCode::Char('e') | KeyCode::Char('E') => {
@@ -545,6 +555,9 @@ impl App {
             Screen::SessionCreate => self.render_session_create(frame, chunks[2]),
             Screen::SessionEdit(_) => self.render_session_edit(frame),
             Screen::SessionDelete(_) => self.render_session_delete(frame),
+            Screen::TrainingContentCreate(session_id) => self.render_training_content_create(frame, chunks[2], *session_id),
+            Screen::TrainingContentEdit(content_id) => self.render_training_content_edit(frame, chunks[2], *content_id),
+            Screen::TrainingContentDelete(content_id) => self.render_training_content_delete(frame, *content_id),
             Screen::Help => self.render_help(frame, chunks[2]),
         }
 
@@ -832,6 +845,38 @@ impl App {
                 Line::from(""),
             ]);
 
+            // Display training content
+            if !self.training_content.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "Training Content:",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                )));
+
+                for content_item in &self.training_content {
+                    lines.push(Line::from(format!(
+                        "  {} - {} ({})",
+                        match &content_item.content_type {
+                            crate::models::ContentType::Drill => "🎯 Drill",
+                            crate::models::ContentType::Exercise => "💪 Exercise",
+                            crate::models::ContentType::Warmup => "🔥 Warm-up",
+                            crate::models::ContentType::Cooldown => "❄️  Cool-down",
+                        },
+                        content_item.title,
+                        content_item
+                            .duration_minutes
+                            .map(|d| format!("{}min", d))
+                            .unwrap_or_else(|| "N/A".to_string())
+                    )));
+
+                    if let Some(desc) = &content_item.description {
+                        lines.push(Line::from(format!("     {}", desc)));
+                    }
+                }
+                lines.push(Line::from(""));
+            }
+
             if self.user_context.is_player() {
                 lines.push(Line::from(Span::styled(
                     if sws.is_completed() {
@@ -843,9 +888,9 @@ impl App {
                     },
                     Style::default().fg(Color::DarkGray),
                 )));
-            } else {
+            } else if self.training_content.is_empty() {
                 lines.push(Line::from(Span::styled(
-                    "Training content will be displayed here in future updates",
+                    "No training content added yet. Use coaching tools to add drills, exercises, and quizzes.",
                     Style::default().fg(Color::DarkGray),
                 )));
             }
@@ -1194,5 +1239,26 @@ impl App {
             .alignment(Alignment::Left);
 
         frame.render_widget(help_para, area);
+    }
+
+    fn render_training_content_create(&self, frame: &mut Frame, area: Rect, _session_id: i64) {
+        let msg = Paragraph::new("Training Content Creation - [TODO]")
+            .block(Block::default().title("Create Training Content").borders(Borders::ALL))
+            .alignment(Alignment::Center);
+        frame.render_widget(msg, area);
+    }
+
+    fn render_training_content_edit(&self, frame: &mut Frame, area: Rect, _content_id: i64) {
+        let msg = Paragraph::new("Training Content Edit - [TODO]")
+            .block(Block::default().title("Edit Training Content").borders(Borders::ALL))
+            .alignment(Alignment::Center);
+        frame.render_widget(msg, area);
+    }
+
+    fn render_training_content_delete(&self, frame: &mut Frame, _content_id: i64) {
+        let msg = Paragraph::new("Training Content Deletion - [TODO]")
+            .block(Block::default().title("Delete Training Content").borders(Borders::ALL))
+            .alignment(Alignment::Center);
+        frame.render_widget(msg, frame.size());
     }
 }

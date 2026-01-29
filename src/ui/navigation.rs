@@ -4,11 +4,14 @@ use crate::auth::UserContext;
 pub enum Screen {
     Home,
     SessionList,
-    SessionDetail(i64), // session_id
+    SessionDetail(i64),        // session_id
     SessionCreate,
-    SessionEdit(i64),   // session_id
-    SessionDelete(i64), // session_id
-    Help,               // Help/commands screen
+    SessionEdit(i64),          // session_id
+    SessionDelete(i64),        // session_id
+    TrainingContentCreate(i64),// session_id - Create content for session
+    TrainingContentEdit(i64),  // content_id
+    TrainingContentDelete(i64),// content_id
+    Help,                      // Help/commands screen
 }
 
 impl Screen {
