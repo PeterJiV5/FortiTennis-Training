@@ -540,9 +540,51 @@ sqlite3 data/tennis.db "INSERT INTO sessions (title, description, scheduled_date
 
 **Estimated Time:** 1-2 weeks
 
-### Future Ideas (Beyond Phase 4)
+### Phase 5: Training Templates & Cursor Memory (Planned - Not Started)
+
+**Goal**: Reduce content duplication and improve UX with persistent navigation state
+
+#### 5.1 Training Templates System (Designed)
+- [ ] Database migration: training_content → training_templates + links
+- [ ] New screens: Template library, create/edit templates
+- [ ] Audit tracking: Creator and last-editor metadata
+- [ ] Session integration: Hybrid binding (reference with overrides)
+- [ ] UI: Template picker when adding content to sessions
+- [ ] Features:
+  - Global template library (coaches see all, can reuse)
+  - Audit trail showing who created/edited each template
+  - Per-session customization (override template values)
+  - Template usage tracking (see which sessions use a template)
+
+**Database**: New tables: `training_templates`, `session_training_links` with audit fields  
+**Tests**: Separate unit test folder `/tests/unit/templates/`  
+**Documentation**: Complete (see DESIGN.md Section 9.1)
+
+#### 5.2 Cursor Position Memory (Designed)
+- [ ] In-memory session-aware cursor position tracking
+- [ ] Auto-restore selection when navigating back
+- [ ] Context-aware: Different positions for different sessions
+- [ ] Example: Select item #7 in SessionList → go to detail → come back → at item #7
+- [ ] No persistence (in-memory only, lost on app exit)
+
+**Implementation**: HashMap tracking per screen+context, restored on screen entry  
+**Tests**: Separate unit test folder `/tests/unit/cursor_memory/`  
+**Documentation**: Complete (see DESIGN.md Section 9.2)
+
+**Estimated Time**: 2-3 weeks (templates are more complex, cursor memory is ~3-5 days)
+
+### Phase 6: Session & Training Content Diff (Future Planning)
+- [ ] Compare templates to sessions to find outdated content
+- [ ] Show what changed in templates since session creation
+- [ ] Audit history with diffs
+- [ ] Optional auto-update capability
+- [ ] Help coaches identify sessions needing updates
+
+**Status**: Designed, waiting for Phase 5 completion  
+**Estimated Time**: 1-2 weeks (post Phase 5)
+
+### Beyond Phase 6: Future Ideas
 - Export training history (CSV/PDF)
-- Session templates for coaches
 - Bulk session assignment
 - Player groups/teams
 - Achievements and badges

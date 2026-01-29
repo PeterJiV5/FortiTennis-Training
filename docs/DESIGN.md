@@ -881,6 +881,446 @@ proptest = "1.4"
 tempfile = "3.10"
 ```
 
+---
+
+## 9. Training Templates & Cursor Memory (Planned Features)
+
+### 9.1 Training Templates Architecture
+
+**Goal**: Reduce training content duplication by enabling coaches to create reusable templates that multiple sessions can reference.
+
+**Confirmed Design Decisions:**
+- **Implementation Strategy**: Option A - Migrate all existing training_content into templates + links (cleaner architecture, requires migration)
+- **Template Scope**: Global (all coaches can see templates), with creator/editor tracking
+- **Session Binding**: Hybrid (templates referenced by sessions, with per-session overrides allowed)
+
+#### 9.1.1 Database Schema Changes
+
+```sql
+-- NEW: Training Templates (global library)
+CREATE TABLE training_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    coach_id INTEGER NOT NULL,              -- Who created it
+    title TEXT NOT NULL,                    -- e.g., "Backhand Drill Pack"
+    content_type TEXT NOT NULL CHECK(content_type IN ('drill', 'exercise', 'warmup', 'cooldown', 'quiz', 'homework')),
+    description TEXT,
+    duration_minutes INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER NOT NULL,            -- Explicit creator
+    last_edited_by INTEGER,                 -- Last editor
+    last_edited_at DATETIME,
+    is_public BOOLEAN DEFAULT 1,            -- Shared across all sessions
+    FOREIGN KEY (coach_id) REFERENCES users(id),
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    FOREIGN KEY (last_edited_by) REFERENCES users(id)
+);
+
+-- NEW: Session-Template Links (junction table)
+CREATE TABLE session_training_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    training_template_id INTEGER NOT NULL,
+    order_index INTEGER NOT NULL,
+    custom_notes TEXT,                      -- Session-specific overrides/notes
+    UNIQUE(session_id, order_index),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (training_template_id) REFERENCES training_templates(id) ON DELETE CASCADE
+);
+
+-- MODIFY: training_content (keep for legacy, populate from templates at runtime)
+-- OR MIGRATE: Move all data to training_templates and update references
+-- Decision: MIGRATE (cleaner, Option A)
+
+-- Migration Strategy:
+-- 1. Create training_templates with data from training_content
+-- 2. Create session_training_links mapping sessions to templates
+-- 3. Archive original training_content table
+-- 4. Update code to read from templates
+```
+
+#### 9.1.2 Data Models
+
+```rust
+// src/models/training_template.rs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingTemplate {
+    pub id: i64,
+    pub coach_id: i64,                      // Global creator
+    pub title: String,
+    pub content_type: ContentType,
+    pub description: Option<String>,
+    pub duration_minutes: Option<i32>,
+    pub created_at: String,
+    pub created_by: i64,
+    pub last_edited_by: Option<i64>,
+    pub last_edited_at: Option<String>,
+    pub is_public: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TemplateAuditInfo {
+    pub created_by_name: String,            // Coach name who created
+    pub last_edited_by_name: Option<String>, // Coach name who last edited
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTrainingLink {
+    pub id: i64,
+    pub session_id: i64,
+    pub training_template_id: i64,
+    pub order_index: i32,
+    pub custom_notes: Option<String>,       // Hybrid: per-session overrides
+    pub template_data: Option<TrainingTemplate>, // Populated on read
+}
+```
+
+#### 9.1.3 Repository Layer
+
+```rust
+// src/db/repositories/training_template_repo.rs
+impl TrainingTemplateRepository {
+    fn create_template(&self, template: &TrainingTemplate) -> Result<i64>;
+    fn get_template_by_id(&self, id: i64) -> Result<TrainingTemplate>;
+    fn list_all_templates(&self) -> Result<Vec<TrainingTemplate>>;
+    fn list_templates_by_coach(&self, coach_id: i64) -> Result<Vec<TrainingTemplate>>;
+    fn update_template(&self, template: &TrainingTemplate, edited_by: i64) -> Result<()>;
+    fn delete_template(&self, id: i64) -> Result<()>;
+    fn get_audit_info(&self, template_id: i64) -> Result<TemplateAuditInfo>;
+}
+
+// src/db/repositories/session_training_link_repo.rs
+impl SessionTrainingLinkRepository {
+    fn add_template_to_session(&self, session_id: i64, template_id: i64, order: i32) -> Result<()>;
+    fn get_templates_for_session(&self, session_id: i64) -> Result<Vec<SessionTrainingLink>>;
+    fn remove_template_from_session(&self, session_id: i64, template_id: i64) -> Result<()>;
+    fn reorder_templates(&self, session_id: i64, new_order: Vec<i64>) -> Result<()>;
+}
+```
+
+#### 9.1.4 UI Screen Hierarchy
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                         HOME SCREEN                          │
+├──────────────────────────────────────────────────────────────┤
+│ > Help                                                       │
+│   Manage Sessions / My Sessions                             │
+│   Training Templates (NEW - Coach only)                    │
+│                                                              │
+│ Controls: ↑↓ Navigate | Enter Select | q Quit | ? Help     │
+└──────────────────────────────────────────────────────────────┘
+           │                    │
+           │                    ├─────────────────┐
+           │                    │                 │
+           ▼                    ▼                 ▼
+        [HELP]        [SESSIONS LIST]   [TRAINING TEMPLATES]
+                           │                    │
+                           ▼                    ├──► TEMPLATE DETAIL
+                      [SESSION DETAIL]         │     ├─ View audit info
+                           │                   │     ├─ Edit template
+                           ├──► [TRAINING      │     └─ Delete
+                           │     CONTENT PICKER]
+                           │     - Browse all   ├──► CREATE TEMPLATE
+                           │       templates    │
+                           │     - Select &     └──► EDIT TEMPLATE
+                           │       add to       
+                           │       session
+                           │
+                           └──► [EDIT SESSION]
+                                (now refs templates)
+
+NEW SCREENS (Pseudo-code):
+- TRAINING_TEMPLATES: List all templates with creator/editor info
+- TRAINING_TEMPLATE_DETAIL: View single template, audit trail, options to edit/delete
+- TRAINING_TEMPLATE_CREATE: Form to create new template
+- TRAINING_TEMPLATE_EDIT: Form to edit existing template (updates created_by/last_edited_by)
+- TRAINING_CONTENT_PICKER: Browse templates when adding to session (search, filter by type)
+```
+
+#### 9.1.5 Program Structure
+
+```
+src/
+├── db/
+│   └── repositories/
+│       ├── training_template_repo.rs (NEW)
+│       └── session_training_link_repo.rs (NEW)
+├── models/
+│   └── training_template.rs (NEW)
+├── services/
+│   └── template_service.rs (NEW)
+│       ├── create_template()
+│       ├── add_template_to_session()
+│       ├── update_template_references()
+│       └── migrate_legacy_content()
+└── ui/
+    ├── screens/
+    │   ├── templates_list.rs (NEW)
+    │   ├── template_detail.rs (NEW)
+    │   ├── template_form.rs (NEW)
+    │   ├── template_picker.rs (NEW)
+    │   └── template_audit.rs (NEW)
+    └── navigation.rs (MODIFIED - add new Screen variants)
+
+tests/
+├── unit/
+│   ├── templates.rs (NEW)
+│   └── session_training_links.rs (NEW)
+└── integration/
+    └── test_template_workflow.rs (NEW)
+```
+
+#### 9.1.6 Audit Tracking UI
+
+When viewing a template, display:
+```
+┌─────────────────────────────────────────────────────┐
+│ Training Template: "Backhand Drill Pack"             │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│ Type: Drill              Duration: 20 minutes       │
+│                                                     │
+│ Created by: Coach Alice         Jan 15, 2026       │
+│ Last edited by: Coach Alice     Jan 28, 2026       │
+│                                                     │
+│ Description:                                       │
+│ Advanced backhand technique drills with footwork   │
+│                                                     │
+│ Used in: 12 sessions                               │
+│                                                     │
+│ [Edit] [Delete] [View Usage] [Back]               │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### 9.2 Cursor Position Memory (Session-Aware)
+
+**Goal**: Remember user's selection position per screen context, providing smoother navigation experience.
+
+**Confirmed Design Decisions:**
+- **Memory Scope**: Session-aware (different position for each session context)
+- **Persistence**: In-memory only (survives only current app session)
+- **Behavior**: Auto-focus last selected item when navigating back to a previously visited screen
+
+#### 9.2.1 Architecture
+
+```rust
+// src/app.rs - Screen context tracking
+
+// New field in App struct:
+pub struct App {
+    // ... existing fields ...
+    
+    /// Tracks cursor position per screen + context
+    /// Key format: "screen_type:context_id"
+    /// Examples:
+    ///   "session_list:global" -> position in coach's session list
+    ///   "session_detail:123" -> position in session 123's content list
+    ///   "templates:global" -> position in templates list
+    pub screen_selection_history: HashMap<String, usize>,
+}
+
+impl App {
+    /// Generate cache key based on current screen and context
+    fn get_screen_key(&self) -> String {
+        match self.current_screen {
+            Screen::SessionList => "session_list:global".to_string(),
+            Screen::SessionDetail(session_id) => format!("session_detail:{}", session_id),
+            Screen::TrainingTemplates => "templates:global".to_string(),
+            Screen::TemplateDetail(template_id) => format!("template_detail:{}", template_id),
+            _ => "default:global".to_string(),
+        }
+    }
+    
+    /// Save current cursor position when leaving a screen
+    fn save_cursor_position(&mut self) {
+        let key = self.get_screen_key();
+        self.screen_selection_history.insert(key, self.selected_index);
+    }
+    
+    /// Restore cursor position when entering a screen
+    fn restore_cursor_position(&mut self) {
+        let key = self.get_screen_key();
+        self.selected_index = self.screen_selection_history
+            .get(&key)
+            .copied()
+            .unwrap_or(0);
+    }
+}
+```
+
+#### 9.2.2 Key Handler Integration
+
+```rust
+// src/ui/app_ui.rs - Updated key handlers
+
+match key.code {
+    KeyCode::Esc | KeyCode::Backspace => {
+        // When navigating away, save current position
+        self.save_cursor_position();
+        
+        if self.current_screen == Screen::Home {
+            self.should_quit = true;
+        } else {
+            self.current_screen = Screen::Home;
+            self.home_menu_selected_index = 0;
+        }
+    }
+    
+    KeyCode::Enter => {
+        // When entering a detail screen, restore saved position later
+        // Navigate to new screen
+        self.current_screen = Screen::SessionDetail(session_id);
+        
+        // After screen change, restore will be called in the render loop
+    }
+}
+
+// In handle_screen_transition():
+fn handle_screen_transition(&mut self, new_screen: Screen) {
+    self.save_cursor_position();  // Save current before leaving
+    self.current_screen = new_screen;
+    self.restore_cursor_position(); // Restore for new screen
+}
+```
+
+#### 9.2.3 UI Behavior Examples
+
+**Example 1: Session List Navigation**
+```
+1. View SessionList with 20 sessions, select item #7 (my session)
+2. Press Enter → navigates to SessionDetail
+3. View SessionDetail for 10 minutes
+4. Press Esc → back to SessionList
+   → Cursor automatically positioned at item #7 ✓
+```
+
+**Example 2: Template Detail with Session Context**
+```
+1. In SessionDetail #42, view training content
+2. Open TRAINING_CONTENT_PICKER to browse 50 templates
+3. Select and add template at position #23
+4. Close picker → back to SessionDetail
+   → Content list cursor at #23 (just added) ✓
+
+5. Later, go back to SessionDetail #42
+   → Content list shows cursor at #23 (remembered) ✓
+
+6. Switch to SessionDetail #99 (different session)
+   → Content list for #99 starts at position 0 (fresh context) ✓
+```
+
+#### 9.2.4 Implementation Structure
+
+```
+src/
+├── app.rs (MODIFIED)
+│   ├── Add screen_selection_history: HashMap<String, usize>
+│   ├── Add get_screen_key() method
+│   ├── Add save_cursor_position() method
+│   ├── Add restore_cursor_position() method
+│   └── Add handle_screen_transition() method
+│
+└── ui/
+    └── app_ui.rs (MODIFIED)
+        ├── Update Esc/Backspace handler to call save_cursor_position()
+        ├── Update Enter handler to call handle_screen_transition()
+        └── Update render loops to restore position on screen entry
+
+tests/
+└── unit/
+    └── cursor_memory.rs (NEW)
+        ├── test_session_list_cursor_restore()
+        ├── test_context_aware_positions()
+        ├── test_multiple_sessions_independent_positions()
+        └── test_position_persists_through_cycle()
+```
+
+#### 9.2.5 Test Examples
+
+```rust
+// tests/unit/cursor_memory.rs
+
+#[test]
+fn test_session_list_cursor_restore() {
+    let mut app = App::new(user_context, db_path);
+    
+    // Load sessions, select item 7
+    app.load_sessions();
+    app.selected_index = 7;
+    app.save_cursor_position();
+    
+    // Navigate to detail
+    app.current_screen = Screen::SessionDetail(123);
+    app.restore_cursor_position();
+    
+    // Navigate back
+    app.current_screen = Screen::SessionList;
+    app.restore_cursor_position();
+    
+    assert_eq!(app.selected_index, 7); // ✓ Position restored
+}
+
+#[test]
+fn test_context_aware_positions() {
+    let mut app = App::new(user_context, db_path);
+    
+    // View SessionDetail #42, position at 5
+    app.current_screen = Screen::SessionDetail(42);
+    app.selected_index = 5;
+    app.save_cursor_position();
+    
+    // View SessionDetail #99, position at 3
+    app.current_screen = Screen::SessionDetail(99);
+    app.selected_index = 3;
+    app.save_cursor_position();
+    
+    // Back to SessionDetail #42
+    app.current_screen = Screen::SessionDetail(42);
+    app.restore_cursor_position();
+    assert_eq!(app.selected_index, 5); // ✓ Different context remembers separately
+    
+    // To SessionDetail #99
+    app.current_screen = Screen::SessionDetail(99);
+    app.restore_cursor_position();
+    assert_eq!(app.selected_index, 3); // ✓ Each session has own position
+}
+```
+
+---
+
+### 9.3 Future Feature: Session & Training Content Diff
+
+**Status**: Planned (not implemented)  
+**Goal**: Enable coaches to compare and track changes between sessions and their templates over time
+
+**High-level Concept**:
+- Show what's changed in a template since a session was created
+- Highlight modifications to training content between sessions
+- Display audit history of template edits with before/after diffs
+- Help identify when to update sessions after template changes
+
+**Example Use Case**:
+```
+Coach Alice created Session A using "Backhand Drill" template on Jan 10
+Coach Bob edited "Backhand Drill" template on Jan 20 (added warm-up step)
+
+When Coach Alice views Session A, show:
+"⚠ This session uses 1 outdated template version
+ Template 'Backhand Drill' was modified on Jan 20
+ [View Changes] [Update Session] [Ignore]"
+```
+
+**Planned Implementation**:
+- Add timestamp tracking to training_templates (created_at, updated_at)
+- Add migration history table to track template version changes
+- Create diff rendering UI showing before/after content
+- Add comparison screen accessible from SessionDetail
+- Optional auto-update capability for sessions
+
+---
+
 ## Appendix B: Quick Start Commands
 
 ```bash
