@@ -36,6 +36,7 @@ pub struct App {
     pub training_content: Vec<TrainingContent>,
     pub training_content_form: TrainingContentForm,
     pub training_content_selected_index: usize,
+    pub home_menu_selected_index: usize,
 }
 
 impl App {
@@ -55,6 +56,7 @@ impl App {
             training_content: Vec::new(),
             training_content_form: TrainingContentForm::new(),
             training_content_selected_index: 0,
+            home_menu_selected_index: 0,
         }
     }
 
@@ -113,37 +115,103 @@ impl App {
 
         match key.code {
             KeyCode::Char('?') => {
-                // Show help screen
+                // Show help screen (available from any screen)
                 self.current_screen = Screen::Help;
             }
             KeyCode::Char('q') | KeyCode::Char('Q') => {
-                // Quit only from home screen, or close help
-                if self.current_screen == Screen::Help {
-                    self.current_screen = Screen::Home;
-                } else if self.current_screen == Screen::Home {
-                    self.should_quit = true;
-                } else {
-                    self.current_screen = Screen::Home;
-                    self.selected_index = 0;
-                }
+                // Always quit the app
+                self.should_quit = true;
             }
-            KeyCode::Esc => {
-                // Go back/cancel
-                if self.current_screen == Screen::Help {
+            KeyCode::Esc | KeyCode::Backspace => {
+                // Go back/cancel or quit if on Home
+                if self.current_screen == Screen::Home {
+                    self.should_quit = true;
+                } else if self.current_screen == Screen::Help {
                     self.current_screen = Screen::Home;
+                    self.home_menu_selected_index = 0;
                 } else {
                     self.current_screen = Screen::Home;
+                    self.home_menu_selected_index = 0;
                     self.selected_index = 0;
                     self.training_content.clear();
                 }
             }
-            KeyCode::Char('1') => {
-                self.current_screen = Screen::Home;
-                self.selected_index = 0;
+            KeyCode::Up | KeyCode::Char('k') => {
+                match self.current_screen {
+                    // Menu navigation on Home screen
+                    Screen::Home => {
+                        let menu_items = self.get_home_menu_items();
+                        if self.home_menu_selected_index > 0 {
+                            self.home_menu_selected_index -= 1;
+                        } else {
+                            self.home_menu_selected_index = menu_items.len() - 1;
+                        }
+                    }
+                    // Session list navigation
+                    Screen::SessionList => {
+                        if self.selected_index > 0 {
+                            self.selected_index -= 1;
+                        }
+                    }
+                    _ => {}
+                }
             }
-            KeyCode::Char('2') => {
-                self.load_sessions();
-                self.current_screen = Screen::SessionList;
+            KeyCode::Down | KeyCode::Char('j') => {
+                match self.current_screen {
+                    // Menu navigation on Home screen
+                    Screen::Home => {
+                        let menu_items = self.get_home_menu_items();
+                        if self.home_menu_selected_index < menu_items.len() - 1 {
+                            self.home_menu_selected_index += 1;
+                        } else {
+                            self.home_menu_selected_index = 0;
+                        }
+                    }
+                    // Session list navigation
+                    Screen::SessionList => {
+                        if !self.sessions.is_empty() && self.selected_index < self.sessions.len() - 1 {
+                            self.selected_index += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Enter => {
+                match self.current_screen {
+                    // Menu selection on Home screen
+                    Screen::Home => {
+                        let menu_items = self.get_home_menu_items();
+                        if self.home_menu_selected_index < menu_items.len() {
+                            let (_, target_screen) = &menu_items[self.home_menu_selected_index];
+                            match target_screen {
+                                Screen::Help => {
+                                    self.current_screen = Screen::Help;
+                                }
+                                Screen::SessionList => {
+                                    self.load_sessions();
+                                    self.current_screen = Screen::SessionList;
+                                    self.selected_index = 0;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    // Session selection on SessionList
+                    Screen::SessionList => {
+                        if !self.sessions.is_empty() {
+                            let session_id = self.sessions[self.selected_index].session.id;
+                            self.current_screen = Screen::SessionDetail(session_id);
+                            
+                            // Load training content for this session
+                            if let Ok(conn) = crate::db::connection::establish_connection(&self.db_path) {
+                                if let Ok(content) = TrainingContentRepository::find_by_session(&conn, session_id) {
+                                    self.training_content = content;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
             KeyCode::Char('c') | KeyCode::Char('C') => {
                 // Create session (coach only)
@@ -179,29 +247,6 @@ impl App {
                     if let Screen::SessionDetail(session_id) = self.current_screen {
                         self.training_content_form = TrainingContentForm::new();
                         self.current_screen = Screen::TrainingContentCreate(session_id);
-                    }
-                }
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
-                }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if !self.sessions.is_empty() && self.selected_index < self.sessions.len() - 1 {
-                    self.selected_index += 1;
-                }
-            }
-            KeyCode::Enter => {
-                if self.current_screen == Screen::SessionList && !self.sessions.is_empty() {
-                    let session_id = self.sessions[self.selected_index].session.id;
-                    self.current_screen = Screen::SessionDetail(session_id);
-                    
-                    // Load training content for this session
-                    if let Ok(conn) = crate::db::connection::establish_connection(&self.db_path) {
-                        if let Ok(content) = TrainingContentRepository::find_by_session(&conn, session_id) {
-                            self.training_content = content;
-                        }
                     }
                 }
             }
@@ -605,6 +650,21 @@ impl App {
         }
     }
 
+    /// Get home menu items based on user role
+    fn get_home_menu_items(&self) -> Vec<(&'static str, Screen)> {
+        if self.user_context.is_coach() {
+            vec![
+                ("Help", Screen::Help),
+                ("Manage Sessions", Screen::SessionList),
+            ]
+        } else {
+            vec![
+                ("Help", Screen::Help),
+                ("My Sessions", Screen::SessionList),
+            ]
+        }
+    }
+
     fn load_sessions(&mut self) {
         if let Ok(conn) = crate::db::establish_connection(&self.db_path) {
             if self.user_context.is_coach() {
@@ -794,60 +854,82 @@ impl App {
     }
 
     fn render_home(&self, frame: &mut Frame, area: Rect) {
-        let welcome_text = if self.user_context.is_coach() {
-            vec![
-                Line::from(""),
-                Line::from(Span::styled(
-                    "Welcome, Coach!",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                Line::from(""),
-                Line::from("You can manage training sessions and monitor player progress."),
-                Line::from(""),
-                Line::from("Navigation:"),
-                Line::from("  [1] Home"),
-                Line::from("  [2] Manage Sessions"),
-                Line::from(""),
-                Line::from("Press the number key to navigate."),
-            ]
+        let menu_items = self.get_home_menu_items();
+        let welcome_title = if self.user_context.is_coach() {
+            Span::styled(
+                "Welcome, Coach!",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )
         } else {
-            vec![
-                Line::from(""),
-                Line::from(Span::styled(
-                    format!("Welcome, {}!", self.user_context.user.display_name),
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                Line::from(""),
-                Line::from(format!(
-                    "Skill Level: {}",
-                    self.user_context
-                        .user
-                        .skill_level
-                        .as_ref()
-                        .map(|s| s.as_str())
-                        .unwrap_or("Not set")
-                )),
-                Line::from(""),
-                Line::from("Navigation:"),
-                Line::from("  [1] Home"),
-                Line::from("  [2] My Sessions"),
-                Line::from(""),
-                Line::from("Press the number key to navigate."),
-            ]
+            Span::styled(
+                format!("Welcome, {}!", self.user_context.user.display_name),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )
         };
 
-        let main_content = Paragraph::new(welcome_text)
+        let mut content_lines = vec![
+            Line::from(""),
+            Line::from(welcome_title),
+            Line::from(""),
+        ];
+
+        // Add skill level for players
+        if self.user_context.is_player() {
+            content_lines.push(Line::from(format!(
+                "Skill Level: {}",
+                self.user_context
+                    .user
+                    .skill_level
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("Not set")
+            )));
+            content_lines.push(Line::from(""));
+        }
+
+        // Add menu items with selection highlight
+        content_lines.push(Line::from("Select an option:"));
+        content_lines.push(Line::from(""));
+
+        for (idx, (label, _)) in menu_items.iter().enumerate() {
+            let is_selected = idx == self.home_menu_selected_index;
+            if is_selected {
+                let styled_line = vec![
+                    Span::styled(
+                        "> ",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        label.to_string(),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ];
+                content_lines.push(Line::from(styled_line));
+            } else {
+                content_lines.push(Line::from(format!("  {}", label)));
+            }
+        }
+
+        content_lines.push(Line::from(""));
+        content_lines.push(Line::from("Controls:"));
+        content_lines.push(Line::from("  ↑↓  Navigate menu  |  Enter  Select  |  q  Quit  |  ?  Help"));
+
+        let main_content = Paragraph::new(content_lines)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .title("Home")
                     .style(Style::default()),
             )
-            .alignment(Alignment::Center);
+            .alignment(Alignment::Left);
 
         frame.render_widget(main_content, area);
     }

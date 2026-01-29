@@ -242,7 +242,81 @@ tennis-tui/
     └── fixtures/
 ```
 
-### 3.3 Technology Stack
+### 3.3 Visual Screen Hierarchy
+
+The application uses a hierarchical screen navigation model with the Home screen as the root:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         HOME SCREEN (Root)                  │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ > Help                 (Menu Item - Yellow, Bold)     │   │
+│  │   Manage Sessions / My Sessions (Depending on role)  │   │
+│  │                                                      │   │
+│  │ Controls: ↑↓ Navigate | Enter Select | q Quit | ? Help│   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+  │                                    │
+  │                                    └──────────────────┐
+  │                                                       │
+  │                                    ┌──────────────────▼──────────────────┐
+  │                                    │                                     │
+  ▼                                    ▼                                     │
+┌─────────────────────┐     ┌──────────────────────────────────────┐      │
+│   HELP SCREEN       │     │   SESSION LIST SCREEN               │      │
+│ (Accessible from    │     │ (Coach: Manage Sessions)            │      │
+│  all screens via    │     │ (Player: My Sessions)               │      │
+│  [?] key or menu)   │     │                                    │      │
+│                     │     │ ↑↓ Navigate | Enter Select         │      │
+│                     │     │ c/C Create | e/E Edit              │      │
+│                     │     │ d/D Delete | s/S Subscribe         │      │
+│                     │     │ f/F Filter (Player) | q Quit       │      │
+│                     │     │ Esc Go Back | ? Help               │      │
+│                     │     │                                    │      │
+│                     │     │ Navigation paths:                 │      │
+│                     │     │   ↓ Enter                          │      │
+└─────────────────────┘     │   └────► SESSION DETAIL            │      │
+         ▲                  │           │                         │      │
+         │                  │           ├─► SESSION EDIT         │      │
+         │                  │           ├─► SESSION DELETE       │      │
+         │                  │           └─► TRAINING CONTENT     │      │
+         │                  │                                    │      │
+         │                  └────────────────────────────────────┘      │
+         │                                                               │
+         │                                                               │
+         └───────────────────────────────────────────────────────────────┘
+                        (Esc from any screen returns to Home)
+
+┌────────────────────────────────────────────────────────────┐
+│  SESSION DETAIL SCREEN                                     │
+│  ├─ View session info (date, time, level, etc.)           │
+│  ├─ View training content list                            │
+│  ├─ (Coach) Edit session: e/E → SESSION EDIT SCREEN       │
+│  ├─ (Coach) Delete session: d/D → CONFIRM & delete        │
+│  ├─ (Coach) Add training content: t/T → TRAINING CONTENT  │
+│  ├─ (Player) Mark complete: m/M                           │
+│  └─ Navigate back: Esc, q or Back button                  │
+└────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────┐
+│  TRAINING CONTENT MANAGEMENT                              │
+│  ├─ View training items (warmup, drills, homework, etc.)  │
+│  ├─ Add new training: [Create] form                       │
+│  ├─ Edit existing: Navigation and edit forms              │
+│  ├─ Delete: With confirmation                            │
+│  └─ Return to Session Detail: Esc or back button          │
+└────────────────────────────────────────────────────────────┘
+
+Key Navigation Rules:
+- **Home** is the root of all navigation
+- **Help** is accessible from any screen via [?] key
+- **Esc/Backspace** returns to Home from any screen (or quits if already on Home)
+- **q key** quits the entire application from any screen
+- **Enter key** selects the highlighted menu item on Home screen
+- **↑↓ arrow keys** (or j/k) navigate menus and lists
+```
+
+### 3.4 Technology Stack
 
 **Core**
 - **Language**: Rust (2021 edition)
